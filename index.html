@@ -1,0 +1,1734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SURGE — Season Planner</title>
+<style>
+  :root{
+    --ink:#0A1F2B;
+    --panel:#123245;
+    --panel-alt:#0F2836;
+    --border:#204A5C;
+    --text:#EAF2F5;
+    --text-dim:#8FB0BE;
+    --accent:#C8102E;
+    --accent-blue:#4A7FE0;
+    --caution:#E8A33D;
+    --green:#35C97C;
+    --red:#E8536B;
+    --blue:#4C8BF5;
+    --z-rec:#9CA3AF;
+    --z-en1:#F2F2EE;
+    --z-en2:#E8536B;
+    --z-en3:#4C8BF5;
+    --z-sp1:#A66DD4;
+    --z-sp2:#35C97C;
+    --z-sp3:#E8A33D;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--ink);color:var(--text);font-family:'IBM Plex Sans',sans-serif;-webkit-font-smoothing:antialiased;}
+  .app{max-width:760px;margin:0 auto;padding:20px 16px 60px;}
+
+  .laneline{height:22px;margin:14px 0;}
+  .laneline svg{width:100%;height:100%;display:block;}
+
+  header.top{text-align:center;padding:6px 0 2px;}
+  h1.title{font-family:'Bebas Neue',sans-serif;font-size:40px;letter-spacing:2px;margin:0;}
+  .subtitle{color:var(--text-dim);font-size:13px;letter-spacing:0.5px;margin-top:2px;}
+
+  section.panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px;margin-top:14px;}
+  h2.section-label{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:1px;color:var(--accent);margin:0 0 4px;}
+  .hint{color:var(--text-dim);font-size:12px;margin:0 0 14px;line-height:1.5;}
+
+  .row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;}
+  .field{flex:1;min-width:160px;}
+  .field label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-dim);margin-bottom:6px;}
+  input[type=number],input[type=text]{
+    width:100%;background:var(--panel-alt);border:1px solid var(--border);color:var(--text);
+    font-family:'IBM Plex Mono',monospace;font-size:14px;padding:9px 10px;border-radius:7px;
+  }
+  select{
+    width:100%;background:var(--panel-alt);border:1px solid var(--border);color:var(--text);
+    font-family:'IBM Plex Sans',sans-serif;font-size:13px;padding:8px 8px;border-radius:7px;
+  }
+  input:focus, select:focus, button:focus{outline:2px solid var(--accent);outline-offset:1px;}
+
+  .date-btn{
+    width:100%;text-align:left;background:var(--panel-alt);border:1px solid var(--border);color:var(--text);
+    font-family:'IBM Plex Mono',monospace;font-size:14px;padding:9px 10px;border-radius:7px;cursor:pointer;
+  }
+  .date-btn:hover{border-color:var(--text-dim);}
+  .calendar-popup{
+    display:none;position:absolute;top:100%;left:0;margin-top:6px;z-index:20;
+    background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px;
+    width:260px;box-shadow:0 8px 24px rgba(0,0,0,0.4);
+  }
+  .calendar-popup.open{display:block;}
+  .cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+  .cal-header button{
+    background:var(--panel-alt);border:1px solid var(--border);color:var(--text);
+    width:28px;height:28px;border-radius:6px;cursor:pointer;font-size:13px;
+  }
+  .cal-header span{font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:0.5px;}
+  .cal-weekdays{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-size:10px;color:var(--text-dim);margin-bottom:4px;}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}
+  .cal-day{
+    aspect-ratio:1;display:flex;align-items:center;justify-content:center;
+    font-family:'IBM Plex Mono',monospace;font-size:12px;border-radius:6px;cursor:pointer;color:var(--text);
+    background:transparent;border:none;
+  }
+  .cal-day:hover{background:var(--panel-alt);}
+  .cal-day.other-month{color:var(--border);}
+  .cal-day.today{border:1px solid var(--accent-blue);}
+  .cal-day.selected{background:var(--accent);color:#FFFFFF;font-weight:600;}
+
+  button.primary{
+    background:var(--accent);color:#FFFFFF;border:none;font-family:'Bebas Neue',sans-serif;
+    font-size:16px;letter-spacing:1px;padding:11px 18px;border-radius:8px;cursor:pointer;
+  }
+  button.primary:hover{filter:brightness(1.05);}
+  button.secondary{
+    background:var(--panel-alt);color:var(--text);border:1px solid var(--border);
+    font-family:'IBM Plex Sans',sans-serif;font-weight:600;font-size:13px;padding:10px 16px;
+    border-radius:8px;cursor:pointer;
+  }
+  button.secondary.chosen{border-color:var(--accent);color:var(--accent);}
+  .btn-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;}
+  .status-msg{font-size:12px;color:var(--text-dim);margin-top:8px;min-height:14px;}
+  .caution-msg{font-size:12px;color:var(--caution);margin-top:6px;display:none;}
+  .caution-msg.show{display:block;}
+
+  .scoreboard{display:flex;gap:10px;flex-wrap:wrap;background:var(--panel-alt);border:1px solid var(--border);border-radius:10px;padding:14px 16px;}
+  .score-item{flex:1;min-width:120px;}
+  .score-item .label{font-size:10.5px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-dim);}
+  .score-item .value{font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600;color:var(--accent);margin-top:2px;}
+  .score-item .value small{font-size:11px;color:var(--text-dim);font-family:'IBM Plex Sans',sans-serif;}
+
+  .rec-card{background:var(--panel-alt);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-top:14px;}
+  .rec-card p{margin:0 0 10px;color:var(--text);font-size:13px;line-height:1.5;}
+
+  .zone-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);}
+  .zone-row:last-child{border-bottom:none;}
+  .zone-row .dot{width:11px;height:11px;border-radius:50%;flex-shrink:0;border:1px solid rgba(255,255,255,0.25);}
+  .zone-row .name{flex:1;font-size:13.5px;}
+  .zone-row .pct{width:52px;text-align:right;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;font-size:12.5px;}
+  .zone-row .yd{width:90px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:13.5px;color:var(--accent);font-weight:600;}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  th,td{padding:7px 8px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap;}
+  th{color:var(--text-dim);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:0.4px;}
+  td:first-child, th:first-child{text-align:left;}
+  td:nth-child(2), th:nth-child(2){text-align:left;}
+  .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:8px;}
+  tbody tr:hover{background:rgba(255,255,255,0.03);}
+  tfoot td{font-weight:700;color:var(--accent);border-top:2px solid var(--border);border-bottom:none;}
+  tbody tr.row-down{background:rgba(53,201,124,0.12);}
+  tbody tr.row-down:hover{background:rgba(53,201,124,0.2);}
+  tbody tr.row-down td:first-child{border-left:3px solid var(--green);padding-left:5px;}
+  tbody tr.row-race{background:rgba(232,163,61,0.10);}
+  tbody tr.row-race:hover{background:rgba(232,163,61,0.18);}
+  tbody tr.row-race td:first-child{border-left:3px solid var(--z-sp3);padding-left:5px;}
+  .down-badge{
+    display:inline-block;margin-left:6px;font-size:9px;font-weight:700;letter-spacing:0.4px;
+    color:var(--green);background:rgba(53,201,124,0.18);border-radius:10px;padding:1px 6px;
+    vertical-align:middle;
+  }
+  .race-badge{
+    display:inline-block;margin-left:6px;font-size:9px;font-weight:700;letter-spacing:0.4px;
+    color:var(--z-sp3);background:rgba(232,163,61,0.18);border-radius:10px;padding:1px 6px;
+    vertical-align:middle;
+  }
+  .table-legend{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-dim);margin-bottom:8px;flex-wrap:wrap;}
+  .table-legend .sw{width:10px;height:10px;border-radius:2px;background:rgba(53,201,124,0.35);border:1px solid var(--green);display:inline-block;}
+  .vol-edit{
+    width:78px;min-width:64px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;text-align:right;
+    background:var(--ink);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;
+  }
+  .vol-edit::-webkit-outer-spin-button, .vol-edit::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+  .vol-edit{ -moz-appearance:textfield; }
+  .vol-edit:focus{outline:2px solid var(--accent);outline-offset:1px;}
+
+  .empty-state{color:var(--text-dim);font-size:13px;text-align:center;padding:30px 10px;}
+
+  .chart-wrap{display:none;}
+  .chart-wrap.open{display:block;}
+  .chart-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:11px;color:var(--text-dim);}
+  .chart-legend .sw{width:10px;height:10px;display:inline-block;border-radius:2px;margin-right:5px;vertical-align:middle;}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <h1 class="title"><span style="color:var(--accent)">S</span><span style="color:#fff">U</span><span style="color:var(--accent-blue)">R</span><span style="color:#fff">G</span><span style="color:var(--accent)">E</span></h1>
+    <div class="subtitle">Season Planner — Multi-week volume &amp; energy-zone planner</div>
+  </header>
+  <div class="laneline" id="laneline-top"></div>
+
+  <!-- SETUP -->
+  <section class="panel">
+    <h2 class="section-label">1. Set Up the Season</h2>
+    <div class="hint">Down weeks, taper shape, and session counts are calculated for you from sports-science defaults, adjusted for age and event.</div>
+
+    <div class="row">
+      <div class="field">
+        <label for="in-profile-name">Athlete / Group Name</label>
+        <input type="text" id="in-profile-name" placeholder="e.g. Charlie Clark, or Distance Group" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="in-profile-select">Load Saved Profile</label>
+        <select id="in-profile-select">
+          <option value="">-- Select a saved profile --</option>
+        </select>
+      </div>
+    </div>
+    <div class="btn-row" style="margin-bottom:16px;">
+      <button class="secondary" id="save-profile-btn">Save Profile</button>
+      <button class="secondary" id="delete-profile-btn">Delete Profile</button>
+    </div>
+    <div class="status-msg" id="profile-status" style="margin-top:-10px;margin-bottom:6px;"></div>
+
+    <div class="row">
+      <div class="field">
+        <label for="in-weeks">Number of Weeks</label>
+        <input type="number" id="in-weeks" min="1" max="52" placeholder="e.g. 18" autocomplete="off">
+      </div>
+      <div class="field" style="position:relative;">
+        <label for="in-comp1-btn">Competition 1 Date (optional)</label>
+        <button type="button" id="in-comp1-btn" class="date-btn">Select a date</button>
+        <input type="hidden" id="in-comp1-date">
+      </div>
+      <div class="field" style="position:relative;">
+        <label for="in-comp2-btn">Competition 2 Date (optional)</label>
+        <button type="button" id="in-comp2-btn" class="date-btn">Select a date — needs Comp 1 set</button>
+        <input type="hidden" id="in-comp2-date">
+      </div>
+      <div class="field">
+        <label for="in-minitaper">Mini-Taper Length, Days (Comp 1 / 2)</label>
+        <input type="number" id="in-minitaper" min="3" max="21" placeholder="e.g. 10" autocomplete="off">
+      </div>
+      <div class="hint" id="comp-weeks-preview" style="margin-top:-8px;"></div>
+      <div class="field" style="position:relative;">
+        <label for="in-start-btn">Season Start (Week 1)</label>
+        <button type="button" id="in-start-btn" class="date-btn">Select a date</button>
+        <input type="hidden" id="in-start">
+        <div class="calendar-popup" id="calendar-popup">
+          <div class="cal-header">
+            <button type="button" id="cal-prev" aria-label="Previous month">&#8592;</button>
+            <span id="cal-month-label"></span>
+            <button type="button" id="cal-next" aria-label="Next month">&#8594;</button>
+          </div>
+          <div class="cal-weekdays"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div>
+          <div class="cal-grid" id="cal-grid"></div>
+        </div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="in-peak">Peak Weekly Volume (yd)</label>
+        <input type="number" id="in-peak" min="0" step="500" placeholder="e.g. 72000" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="in-age">Athlete Age</label>
+        <input type="number" id="in-age" min="8" max="60" placeholder="e.g. 24" autocomplete="off">
+        <div class="caution-msg" id="youth-caution">Under 16 — down weeks are scheduled more often and volume should ramp gradually (growth/injury risk).</div>
+        <div class="caution-msg" id="female-caution">Rapid volume increases around/after puberty carry added risk for female athletes (menstrual function, bone health, RED-S) — progress conservatively and watch for warning signs.</div>
+      </div>
+      <div class="field">
+        <label for="in-sex">Sex</label>
+        <select id="in-sex">
+          <option value="unspecified" selected>Not specified</option>
+          <option value="male">Male</option>
+          <option value="female">Female</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="in-event-type">Event Orientation</label>
+        <select id="in-event-type">
+          <option value="" selected>-- Select --</option>
+          <option value="sprint">200 &amp; Down</option>
+          <option value="mid">500 &amp; Down</option>
+          <option value="distance">500 &amp; Up</option>
+          <option value="puredistance">Pure Distance (Mile / 10K / Open Water)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="in-quad">Quad Position</label>
+        <select id="in-quad">
+          <option value="" selected>-- Select --</option>
+          <option value="twoplus">2+ Years Out (Base Building)</option>
+          <option value="oneyr">1 Year Out (Pre-Competition)</option>
+          <option value="compyear">Competition Year (Olympics / World Champs)</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="in-prev-peak">Previous Season's Peak Volume (yd)</label>
+        <input type="number" id="in-prev-peak" min="0" step="500" placeholder="optional — leave blank if unknown" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="in-level">Athlete Level</label>
+        <select id="in-level">
+          <option value="" selected>-- Select --</option>
+          <option value="developmental">Developmental / Age Group</option>
+          <option value="highschool">High School / Club</option>
+          <option value="college">College / National</option>
+          <option value="elite">International / Elite</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Unified peak volume recommendation -->
+    <div class="rec-card" id="volume-rec" style="display:none;">
+      <p id="volume-rec-text"></p>
+      <div class="btn-row">
+        <button class="secondary" id="use-recommended-btn">Use Recommended</button>
+        <button class="secondary" id="keep-mine-btn">Keep My Volume</button>
+      </div>
+    </div>
+
+    <div class="btn-row" style="margin-top:14px;">
+      <button class="primary" id="generate-btn">Generate Season Plan</button>
+      <button class="secondary" id="chart-toggle-btn">Show Volume Chart</button>
+      <button class="secondary" id="export-btn">Export to Excel</button>
+      <button class="secondary" id="clear-btn">Clear Inputs</button>
+    </div>
+    <div class="status-msg" id="setup-status">Generating rebuilds the plan using the volume above.</div>
+  </section>
+
+  <!-- CHART -->
+  <div class="chart-wrap" id="chart-wrap">
+    <section class="panel">
+      <h2 class="section-label">Weekly Volume</h2>
+      <div class="hint">Bar height is that week's total swim volume. Color shows the phase — build, down, or taper. The dashed line marks your peak target.</div>
+      <div id="chart-container"></div>
+      <div class="chart-legend">
+        <span><span class="sw" style="background:var(--blue)"></span>Build</span>
+        <span><span class="sw" style="background:var(--green)"></span>Down</span>
+        <span><span class="sw" style="background:var(--accent)"></span>Taper</span>
+      </div>
+    </section>
+  </div>
+
+  <div class="laneline" id="laneline-mid1"></div>
+
+  <!-- SNAPSHOT -->
+  <section class="panel">
+    <h2 class="section-label">2. Season Snapshot</h2>
+    <div class="scoreboard">
+      <div class="score-item"><div class="label">Season Total</div><div class="value" id="sum-total">0 <small>yd</small></div></div>
+      <div class="score-item"><div class="label">Avg / Week</div><div class="value" id="sum-avg">0 <small>yd</small></div></div>
+      <div class="score-item"><div class="label">Peak Week</div><div class="value" id="sum-peak">–</div></div>
+      <div class="score-item"><div class="label">Down Weeks</div><div class="value" id="sum-down">0</div></div>
+    </div>
+  </section>
+
+  <div class="laneline" id="laneline-mid2"></div>
+
+  <!-- ZONE BREAKDOWN -->
+  <section class="panel">
+    <h2 class="section-label">3. Season Energy Zone Plan</h2>
+    <div class="hint" id="zone-hint">Generate a plan to see this.</div>
+    <div class="hint" style="margin-top:-8px;">Yardage alone doesn't guarantee the intended effect for SP1-3, especially SP2 — true lactate-production work needs long, near-full recovery between reps (often several minutes, sometimes much longer) to stay maximal. The same yardage with short rest becomes lactate-tolerance work instead, a different target. REC yardage matters too, not just as filler — active recovery clears lactate faster than passive rest and is part of what makes the rest of the week's volume sustainable. Day sequencing still matters, but the mechanism is metabolic, not the land-sprint CNS-fatigue rule it's sometimes borrowed from: water removes most of the ground-impact/eccentric loading that drives multi-day neuromuscular deficits on land, and research on swimmers racing across multi-day meets shows jump/neuromuscular output holding up even as lactate and perceived effort climb. So back-to-back SP1-3 days aren't the same 48-72hr CNS risk they'd be on land — but the metabolic cost (lactate, glycogen, RPE) is real and still needs the recovery to actually happen, so keep some easier volume around genuinely hard days rather than stacking them purely for CNS-timing reasons.</div>
+    <div class="hint" style="margin-top:-6px;font-size:11px;color:var(--text-dim);">(Weekly zone splits above are season-level targets, not a day-by-day schedule — how you sequence SP-zone sessions within the week is still on the coach.)</div>
+    <div class="table-legend" id="zone-legend-line"></div>
+    <div class="table-wrap">
+      <table id="zone-table">
+        <thead><tr id="zone-table-head"></tr></thead>
+        <tbody id="zone-table-body"></tbody>
+        <tfoot><tr id="zone-table-foot"></tr></tfoot>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<script>
+/* ---------- Fixed, science-based defaults (not user inputs) ----------
+   Down-week frequency: every 4th week for 15+, every 3rd week under 15 (adolescents
+   accumulate training stress faster, per HRV studies).
+   Down-week cut: 30% off the build trend (revised from 35% after cross-checking
+   against independent running-coach literature, which converges on 15-30% with the
+   90th-percentile cases going to 40% — 30% sits at the well-supported end without
+   overshooting the broader convergence).
+   Taper length: 2 weeks for shorter seasons, 3 for a full championship-length
+   season (>=20 weeks).
+   Taper shape: front-loaded, accelerating decline. The 60%->38% values below were the
+   original universal default and are now specifically the "mid" (500 & Down) event
+   profile's taper depth — see ZONE_PROFILES for how sprint/distance/puredistance
+   deviate from this reference point (swimming-specific research reverses the general
+   endurance-sport intuition: sprinters need a DEEPER taper, distance swimmers a
+   SHALLOWER one). High-frac matches the observed elite swimmer taper curve (58/56/44%
+   of peak across 3 weeks). Low-frac tightened from an earlier 42% to 38% after
+   checking against Jon Urbanchek's own documented Michigan 3-week taper: distance
+   reduced from 60-70K to 20-30K per week — the midpoint ratio (25K/65K) is ~38%.
+------------------------------------------------------------------------- */
+const DOWN_FREQ_ADULT = 4;
+const DOWN_CUT_PCT = 30;
+const TAPER_LEN_LONG = 3;
+const TAPER_LEN_SHORT = 2;
+const TAPER_LEN_THRESHOLD_WEEKS = 20;
+
+/* Multi-competition support: up to 2 secondary/qualifying meets get a short, shallow
+   "mini-taper" rather than a second or third full 2-3 week championship taper.
+   Urbanchek's own annual plan ran exactly two FULL tapers across a ~48-week year
+   (30wk collegiate season + 18wk summer season, each ending in its own taper) —
+   that's the practical ceiling for full championship-caliber tapers in a season.
+   Mid-season qualifying meets don't warrant a second/third full cycle. Mini-taper
+   length is user-set in DAYS (default 10, per coach feedback that a flat 1-week
+   taper doesn't give a real meet enough runway), converted to whole weeks for this
+   app's weekly-row structure via Math.ceil(days/7) — so 10 days becomes 2 taper
+   weeks, cut to 75% of that meet's own peak, deliberately shallow and short
+   compared to the main event's taper, consistent with how programs "swim through"
+   or lightly rest for a non-final meet.
+   Peak Final (the main/end-of-season event) equals Peak 1 by default — it does NOT
+   automatically climb higher. An earlier version stacked an additional progression
+   step on top of Peak 1 for long seasons, reasoning that a season spanning ~2
+   macrocycles (matching Urbanchek's real annual structure) should get 2 progression
+   steps — but Peak 1 was ALREADY the safety-capped full increase over last season's
+   peak, so adding a second step compounded to roughly double the intended safe rate
+   (two ~9% steps compounding to ~19%, not the ~9% the safety cap was built to
+   enforce). Corrected: the progression % represents the season's one safe increase,
+   applied once. If the main event should genuinely peak higher than a secondary
+   competition, that's a deliberate coaching call made by editing individual weeks
+   directly, not something the app should assume automatically. */
+const DEFAULT_MINI_TAPER_DAYS = 10;
+// Mini-taper DEPTH is no longer a flat constant — see the miniTaperFrac calculation
+// in suggestVolumes, which scales it per event orientation off that event's own
+// main-taper reduction (roughly half as deep as the full championship taper).
+
+/* Athlete level drives two things, based on a multi-season study of elite swimmers'
+   overload/taper patterns (Hellard et al.):
+   1) Year-over-year volume progression — cross-sectional comparisons show world-class
+      athletes carry ~15-30% higher volume than lower-level athletes, so athletes
+      further from that ceiling have more room to progress; athletes already near it
+      should add only a little.
+   2) Pre-taper shape — early-career/developing swimmers responded best to a medium,
+      SUSTAINED load held from overload into taper (a plateau/bell shape); more
+      experienced athletes (multiple seasons of training history) responded best to a
+      HIGHER, sharper peak followed by a steeper taper cut — less plateau, more spike. */
+/* Elite progressionPct of 8% (revised from an earlier, too-conservative 2%) reflects a
+   published case study of a world-class 400 IM swimmer (Rio Olympics finalist, European
+   Championship medalist) whose annual volume grew from 2,500km to 3,300km over three
+   years — a sustained ~9-11%/year increase during an active multi-year buildup, not a
+   plateaued maintenance year. Maglischo likewise recommends increasing volume in
+   Olympic/World Championship years specifically. This assumes the athlete isn't yet at
+   their personal volume ceiling — a genuinely plateaued elite athlete would still
+   reasonably want something closer to the old 2%. One honest counter-finding: the same
+   elite-cohort research found sprinters' most successful Olympic-year patterns came
+   from shifting intensity rather than raising volume — this 8% base is calibrated for
+   distance-range progression, not sprint. */
+const LEVELS = {
+  developmental: {label:'Developmental / Age Group', progressionPct:12, plateauWeeks:3, plateauFrac:0.93},
+  highschool:    {label:'High School / Club',         progressionPct:8,  plateauWeeks:2, plateauFrac:0.95},
+  college:       {label:'College / National',         progressionPct:5,  plateauWeeks:2, plateauFrac:0.97},
+  elite:         {label:'International / Elite',      progressionPct:8,  plateauWeeks:1, plateauFrac:1.00},
+};
+
+/* No published study reports a clean "% volume increase per year" broken out by event
+   group (sprint/mid/distance) — that number doesn't exist in the literature searched.
+   What IS supported: (1) the level-based gap above (world-class vs. sub-elite athletes
+   run ~15-30% higher volume), and (2) a qualitative pattern in elite training-load
+   studies — sprinters' year-to-year gains lean more on intensity/technical refinement
+   with their total annual volume plateauing earlier, while distance/open-water
+   improvement stays more volume-driven for longer. These multipliers translate that
+   qualitative pattern into a modifier on the level-based number above — clearly a
+   coach's extrapolation, not a directly cited figure. */
+const EVENT_PROGRESSION_MULT = {
+  sprint: 0.70, mid: 1.00, distance: 1.15, puredistance: 1.30
+};
+
+/* Quad position: how far out from the athlete's major target (Worlds/Olympics).
+   Applied on top of the level-based progression rate, for every level — a
+   developmental athlete 2+ years from their goal has just as much reason to be
+   pushed as an elite one; a competition-year athlete at any level has just as much
+   reason to pull back. Two years out is explicitly treated as "still building, not
+   at capacity" regardless of level — this overrides the "possibly plateaued" framing
+   the elite level otherwise carries. Competition-year pullback follows the
+   elite-cohort finding that Olympic/Worlds-year gains came from shifting intensity
+   rather than continuing to raise volume. */
+const QUAD_MULT = { twoplus: 1.3, oneyr: 1.0, compyear: 0.6 };
+const QUAD_LABEL = { twoplus: '2+ years out', oneyr: '1 year out', compyear: 'competition year' };
+
+function downFreqForAge(age){
+  if(age <= 14) return 3;
+  return DOWN_FREQ_ADULT;
+}
+function isYouthAge(age){ return age < 16; }
+
+/* Energy-zone splits by event orientation.
+   REVISED against a 20-year cohort of actual elite swimmer training data (Hellard et
+   al.), which found real elite swimmers train roughly 40-44% below ~2 mmol/L, 44-46%
+   in the 2-4 mmol/L threshold range, and only ~10-14% above 4 mmol/L — i.e. a much
+   larger threshold/moderate allocation (mapped here to EN2) than earlier versions of
+   this app used. General-endurance-sport "polarized" (80/20) guidance, which minimizes
+   the threshold zone, does NOT match what elite swimmers actually do — swimming's own
+   literature runs pyramidal, not polarized, so that popular model was intentionally
+   not applied here. "500 & Down" is the neutral reference point; the other three keep
+   their previous relative tilt in the high-intensity tail but are corrected to the
+   same realistic low/moderate split.
+   "Distance (500&Up)" EN3 raised 4%->8% after coach feedback: real logged practice ran
+   7-10% EN3, and elite 800m-vs-1500m runner research shows the shorter end of a
+   distance category needs meaningfully more at/above-threshold work (800m ~60/40
+   below/at-or-above threshold) than pure long-distance (1500m ~90/10) — the app had
+   been calibrated closer to the pure-distance end for the whole 500&Up bucket.
+   "Pure Distance" EN3 raised 3%->6% for the same reason, one step further: the modern
+   elite mile-to-open-water double (Finke, Paltrinieri, Wellbrock — all training real
+   VO2max work and racing fast 1500m splits while also dominating the 10K) shows this
+   category isn't "minimize top-end work" the way pure ultra-marathon swimming is.
+   10K result itself still correlates most with aerobic threshold, not VO2max, which is
+   why EN1/EN2 stay the largest share — but EN3 drives the pool-mile speed and the
+   tactical surge capacity open-water racing rewards. Caveat: an athlete who is a true
+   25km+ ultra-marathon specialist with no pool-mile ambitions would reasonably want
+   this lower again, closer to the old 3% — this value assumes a hybrid mile/10K
+   profile like the one described when this was set.
+   peakMult raised again for distance (1.10->1.25) and puredistance (1.20->1.40) after
+   a direct quote from Lukas Maertens (Olympic 400 free champion, trains in the same
+   Magdeburg group as Wellbrock) describing their own routine week: "90 kilometers is
+   the basic week... we are training 10 or 11 times a week in the water" — ~98,425 yd
+   as a BASELINE week, not even peak, for the world's most successful distance/open-
+   water program. Previous multipliers put peak distance/puredistance volume below
+   what this group treats as ordinary. */
+/* taperHigh/taperLow: how deep the main taper cuts, as a fraction of peak volume,
+   for the first and final taper week respectively. Swimming reverses the general
+   endurance-sport intuition here — multiple independent sources converge on
+   sprinters needing the DEEPER, sometimes longer taper (neuromuscular freshness is
+   the limiter, and genuinely needs volume relief to restore), while distance
+   swimmers need a SHALLOWER one (aerobic conditioning is the limiter, and cutting
+   volume too far or too long detrains the very engine their performance depends on)
+   — one source states distance swimmers "may need only minimal reductions in
+   training volume" while sprinters often need 4-6 weeks to fully restore power.
+   The direction is well-supported across sources; the exact magnitude isn't pinned
+   down in the literature, so these are a reasoned coach-judgment scale, same
+   category as the other extrapolated multipliers in this file — "mid" keeps the
+   original universal default as the middle reference point. */
+/* Sprint and Distance revised to genuinely match their classified TID shape, per a
+   systematic review finding sprint swimmers follow a polarized+threshold model,
+   middle-distance a threshold+pyramidal model, and long-distance a primarily
+   pyramidal model. Mid and Pure Distance already matched their classification and
+   are unchanged. Sprint previously carried nearly the same EN2 share as Mid — not
+   actually polarized, just Mid with different edges. Trimmed EN2 (44%->36%) and
+   moved the difference into EN3/SP1-3 (the high end), not into REC/EN1, creating a
+   genuine two-extremes shape while keeping the aerobic base intact (sprinters still
+   need real REC/EN1 volume for recovery and immune health, even training a highly
+   anaerobic event). Distance previously had EN2 essentially tied with EN1 (44 vs
+   34) — threshold-dominant, not pyramidal. Shifted weight from EN2 into EN1 (44->38,
+   34->40) so aerobic base clearly outweighs threshold, matching Pure Distance's
+   already-correct pyramid shape rather than sitting ambiguously between Mid and
+   Pure Distance. This is adult-target data (the underlying cohort followed
+   established elite athletes across up to 11 competitive seasons) — the existing
+   age-blend toward YOUTH_BASE_PCT (full target only by 15-16) means a developing
+   athlete isn't pushed into this shape early regardless of which event orientation
+   is selected, consistent with avoiding early over-specialization in growing
+   athletes. */
+const ZONE_PROFILES = {
+  sprint:       {label:'200 & Down',                          pct:{REC:0.09, EN1:0.31, EN2:0.36, EN3:0.11, SP1:0.04,  SP2:0.03,  SP3:0.06}, peakMult:0.85, taperHigh:0.55, taperLow:0.30},
+  mid:          {label:'500 & Down',                          pct:{REC:0.09, EN1:0.33, EN2:0.45, EN3:0.07, SP1:0.02,  SP2:0.01,  SP3:0.03}, peakMult:1.00, taperHigh:0.60, taperLow:0.38},
+  distance:     {label:'500 & Up',                            pct:{REC:0.10, EN1:0.40, EN2:0.38, EN3:0.08, SP1:0.015, SP2:0.005, SP3:0.02}, peakMult:1.25, taperHigh:0.70, taperLow:0.50},
+  puredistance: {label:'Pure Distance (Mile / 10K / Open Water)', pct:{REC:0.12, EN1:0.41, EN2:0.39, EN3:0.06, SP1:0.01,  SP2:0.003, SP3:0.007}, peakMult:1.40, taperHigh:0.75, taperLow:0.55},
+};
+
+/* Age-based blending toward an aerobic-dominant base, independent of event orientation.
+   Australian age-group development research (ICAR) is explicit: training before 16
+   should be primarily technical/aerobic-base work regardless of eventual specialty —
+   endurance capacity is essentially fully developed by ~15, but anaerobic capacity
+   isn't fully developed until ~19, so loading heavy anaerobic work on a young sprinter
+   just because they're "a sprinter" runs ahead of their physiology. This blends every
+   event profile toward a conservative aerobic-heavy base for younger athletes, fully
+   phasing in the event-specific split by age 16. */
+const YOUTH_BASE_PCT = {REC:0.15, EN1:0.63, EN2:0.19, EN3:0.02, SP1:0.005, SP2:0.002, SP3:0.003};
+function blendedZonePct(eventKey, age, sex){
+  const profile = ZONE_PROFILES[eventKey] || ZONE_PROFILES.mid;
+  // Females' greatest swim-performance improvement window is ~14-15yo vs ~15-16 for
+  // males (Australian age-group development data), reflecting earlier maturation —
+  // so the blend window shifts about a year earlier for female athletes.
+  const startAge = sex==='female' ? 11 : 12;
+  const endAge = sex==='female' ? 15 : 16;
+  const blend = Math.max(0, Math.min(1, (age-startAge)/(endAge-startAge)));
+  const out = {};
+  ZONES.forEach(z=>{
+    out[z.key] = YOUTH_BASE_PCT[z.key]*(1-blend) + profile.pct[z.key]*blend;
+  });
+  return out;
+}
+
+/* Season re-entry: Urbanchek's own documented practice restricts early season to
+   White/Pink/Red only (REC/EN1/EN2) — no EN3, SP1, SP2, or SP3 at all — only adding
+   those starting mid-season. This isn't a volume decision, it's a zone-restriction
+   one: after a typical 2-3 week off-season break, the adaptations that let an athlete
+   handle high-intensity work safely (lactate buffering, neuromuscular readiness,
+   connective tissue tolerance) have detrained faster than general aerobic capacity,
+   and the same acute:chronic workload research behind this app's down-week logic
+   flags sudden intensity reintroduction after a low-load period as the highest-risk
+   scenario for injury — even if total volume is already ramping up gradually, as it
+   already does here. REENTRY_WEEKS=3 matches the "2-3 weeks off" window described
+   when this was built — a coach-judgment default, not a cited number, same category
+   as the down-week frequency default elsewhere in this file. Only applies to the
+   season's opening weeks, not after the mid-season mini-taper (a rest week, not a
+   real break). */
+const REENTRY_WEEKS = 3;
+const REENTRY_VOLUME_START_FRAC = 0.35;
+function reentryZonePct(pct, weekNum){
+  if(weekNum > REENTRY_WEEKS) return pct;
+  const highTotal = pct.EN3 + pct.SP1 + pct.SP2 + pct.SP3;
+  const earlyPct = {REC:pct.REC, EN1:pct.EN1, EN2:pct.EN2+highTotal, EN3:0, SP1:0, SP2:0, SP3:0};
+  const blend = weekNum / (REENTRY_WEEKS + 1); // week1 -> 1/4, week2 -> 2/4, week3 -> 3/4, never fully target by week 3
+  const out = {};
+  ZONES.forEach(z=>{ out[z.key] = earlyPct[z.key]*(1-blend) + pct[z.key]*blend; });
+  return out;
+}
+
+/* Combines the age/sex-blended base with the season-opening re-entry blend and the
+   taper-approach polarize shift, in that order — the one place all three season-
+   phase adjustments to zone percentages come together, used identically by the
+   table render and the export so they never drift apart. */
+function fullZonePctForWeek(w, basePct){
+  let pct = reentryZonePct(basePct, w.weekNum);
+  if(w.raceSpecific) pct = polarizeShift(pct);
+  return pct;
+}
+const ZONES = [
+  {key:'REC', label:'Recovery',        color:'var(--z-rec)'},
+  {key:'EN1', label:'Aerobic Dev',     color:'var(--z-en1)'},
+  {key:'EN2', label:'Aero/Anaer Mix 1',color:'var(--z-en2)'},
+  {key:'EN3', label:'Aero/Anaer Mix 2',color:'var(--z-en3)'},
+  {key:'SP1', label:'Anaerobic 1',     color:'var(--z-sp1)'},
+  {key:'SP2', label:'Anaerobic 2',     color:'var(--z-sp2)'},
+  {key:'SP3', label:'Sprint',          color:'var(--z-sp3)'},
+];
+const STORAGE_KEY = 'season-plan';
+const PROFILE_INDEX_KEY = 'season-plan-profiles';
+function profileStorageKey(name){ return 'season-plan-profile:' + name; }
+
+let weeks = [];     // [{weekNum, date, phase, volume}]
+let settings = {numWeeks:0, startDate:'', peakVolume:0, peak2:0, age:0, sex:'unspecified', eventType:'', level:'', prevPeak:0, quadPosition:'', weeksToComp1:0, weeksToComp2:0, miniTaperDays:0};
+
+/* ---------- storage (browser localStorage — works on any website) ---------- */
+async function loadPlan(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){
+      const parsed = JSON.parse(raw);
+      weeks = parsed.weeks || [];
+      settings = Object.assign(settings, parsed.settings || {});
+    }
+  }catch(e){ /* nothing saved yet, or storage unavailable */ }
+}
+async function savePlan(){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({settings, weeks})); }
+  catch(e){ /* best effort — e.g. private browsing mode may block storage */ }
+  // If an athlete/group name is active, keep their saved profile in sync automatically
+  // with every generate or manual edit — no separate save click needed once named.
+  const profileName = (document.getElementById('in-profile-name').value||'').trim();
+  if(profileName){
+    try{
+      localStorage.setItem(profileStorageKey(profileName), JSON.stringify({settings, weeks}));
+      const names = JSON.parse(localStorage.getItem(PROFILE_INDEX_KEY)||'[]');
+      if(!names.includes(profileName)){
+        names.push(profileName);
+        names.sort();
+        localStorage.setItem(PROFILE_INDEX_KEY, JSON.stringify(names));
+      }
+    }catch(e){ /* best effort */ }
+  }
+}
+
+function forceBlankAllFields(){
+  // Force every field blank — browsers can silently repopulate number/text inputs
+  // from their own remembered-value autofill history, completely independent of
+  // this app's own saved-plan storage.
+  ['in-weeks','in-peak','in-age','in-prev-peak','in-comp1-date','in-comp2-date','in-minitaper'].forEach(id=> document.getElementById(id).value='');
+  document.getElementById('in-start').value = '';
+  document.getElementById('in-start-btn').textContent = 'Select a date';
+  document.getElementById('in-comp1-btn').textContent = 'Select a date';
+  document.getElementById('in-comp2-btn').textContent = 'Select a date — needs Comp 1 set';
+  document.getElementById('comp-weeks-preview').textContent = '';
+  document.getElementById('in-sex').value = 'unspecified';
+  document.getElementById('in-event-type').value = '';
+  document.getElementById('in-quad').value = '';
+  document.getElementById('in-level').value = '';
+}
+
+function populateFieldsFromSettings(){
+  if(weeks.length){
+    document.getElementById('in-weeks').value = settings.numWeeks;
+    document.getElementById('in-start').value = settings.startDate;
+    document.getElementById('in-start-btn').textContent = formatDateDisplay(settings.startDate);
+    document.getElementById('in-peak').value = settings.peakVolume;
+    document.getElementById('in-age').value = settings.age || '';
+    if(settings.prevPeak) document.getElementById('in-prev-peak').value = settings.prevPeak;
+    if(settings.comp1Date){
+      document.getElementById('in-comp1-date').value = settings.comp1Date;
+      document.getElementById('in-comp1-btn').textContent = formatDateDisplay(settings.comp1Date);
+    }
+    if(settings.comp2Date){
+      document.getElementById('in-comp2-date').value = settings.comp2Date;
+      document.getElementById('in-comp2-btn').textContent = formatDateDisplay(settings.comp2Date);
+    }
+    if(settings.miniTaperDays) document.getElementById('in-minitaper').value = settings.miniTaperDays;
+    updateCompWeeksPreview();
+  }
+  if(settings.eventType) document.getElementById('in-event-type').value = settings.eventType;
+  if(settings.level) document.getElementById('in-level').value = settings.level;
+  if(settings.sex) document.getElementById('in-sex').value = settings.sex;
+  if(settings.quadPosition) document.getElementById('in-quad').value = settings.quadPosition;
+}
+
+/* ---------- athlete/group profile management ---------- */
+function loadProfileIndex(){
+  try{ return JSON.parse(localStorage.getItem(PROFILE_INDEX_KEY)||'[]'); }
+  catch(e){ return []; }
+}
+function populateProfileSelect(selected){
+  const names = loadProfileIndex();
+  const sel = document.getElementById('in-profile-select');
+  sel.innerHTML = '<option value="">-- Select a saved profile --</option>' +
+    names.map(n=>`<option value="${xmlEscape(n)}"${n===selected?' selected':''}>${xmlEscape(n)}</option>`).join('');
+}
+
+document.getElementById('save-profile-btn').addEventListener('click', ()=>{
+  const name = (document.getElementById('in-profile-name').value||'').trim();
+  const statusEl = document.getElementById('profile-status');
+  if(!name){
+    statusEl.textContent = 'Enter an athlete or group name above first.';
+    return;
+  }
+  try{
+    localStorage.setItem(profileStorageKey(name), JSON.stringify({settings, weeks}));
+    const names = loadProfileIndex();
+    if(!names.includes(name)){ names.push(name); names.sort(); localStorage.setItem(PROFILE_INDEX_KEY, JSON.stringify(names)); }
+    populateProfileSelect(name);
+    statusEl.textContent = `Saved "${name}". Future edits to this plan save here automatically.`;
+  }catch(e){
+    statusEl.textContent = 'Could not save — storage may be unavailable.';
+  }
+});
+
+document.getElementById('in-profile-select').addEventListener('change', (e)=>{
+  const name = e.target.value;
+  const statusEl = document.getElementById('profile-status');
+  if(!name) return;
+  try{
+    const raw = localStorage.getItem(profileStorageKey(name));
+    if(!raw){ statusEl.textContent = 'That saved profile could not be found.'; return; }
+    const parsed = JSON.parse(raw);
+    weeks = parsed.weeks || [];
+    settings = Object.assign(settings, parsed.settings || {});
+    forceBlankAllFields();
+    populateFieldsFromSettings();
+    document.getElementById('in-profile-name').value = name;
+    updateYouthCaution();
+    renderAll();
+    statusEl.textContent = `Loaded "${name}".`;
+  }catch(e){
+    statusEl.textContent = 'Could not load that profile.';
+  }
+});
+
+let deleteProfileArmed = false;
+let deleteProfileTimeout = null;
+document.getElementById('delete-profile-btn').addEventListener('click', (e)=>{
+  const btn = e.target;
+  const name = document.getElementById('in-profile-name').value.trim();
+  const statusEl = document.getElementById('profile-status');
+  if(!name){ statusEl.textContent = 'No profile name entered to delete.'; return; }
+  if(!deleteProfileArmed){
+    deleteProfileArmed = true;
+    btn.textContent = 'Click again to confirm delete';
+    deleteProfileTimeout = setTimeout(()=>{ deleteProfileArmed=false; btn.textContent='Delete Profile'; }, 4000);
+  } else {
+    clearTimeout(deleteProfileTimeout);
+    deleteProfileArmed = false;
+    btn.textContent = 'Delete Profile';
+    try{
+      localStorage.removeItem(profileStorageKey(name));
+      const names = loadProfileIndex().filter(n=>n!==name);
+      localStorage.setItem(PROFILE_INDEX_KEY, JSON.stringify(names));
+      populateProfileSelect('');
+      statusEl.textContent = `Deleted "${name}".`;
+    }catch(e){
+      statusEl.textContent = 'Could not delete that profile.';
+    }
+  }
+});
+
+/* ---------- helpers ---------- */
+function isoDate(d){ const dt=new Date(d); return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'); }
+
+/* Converts a competition date to the 1-indexed week number it falls in, relative to
+   the season start date — week 1 covers days 0-6 after start, week 2 covers 7-13,
+   and so on. This is what the rest of the app's logic (assignPhases, suggestVolumes)
+   actually needs; asking the coach for a date instead of a week count is friendlier,
+   the app just does this conversion instead of asking them to count weeks by hand. */
+function dateToWeekNumber(startIso, dateIso){
+  if(!startIso || !dateIso) return 0;
+  const start = new Date(startIso+'T00:00:00');
+  const d = new Date(dateIso+'T00:00:00');
+  const diffDays = Math.round((d-start)/(1000*60*60*24));
+  if(diffDays < 0) return 0;
+  return Math.floor(diffDays/7)+1;
+}
+
+function updateCompWeeksPreview(){
+  const startIso = document.getElementById('in-start').value;
+  const comp1Iso = document.getElementById('in-comp1-date').value;
+  const comp2Iso = document.getElementById('in-comp2-date').value;
+  const parts = [];
+  if(comp1Iso){
+    parts.push(startIso ? `Competition 1 falls in week ${dateToWeekNumber(startIso,comp1Iso)} of the season.` : `Set Season Start to calculate Competition 1's week.`);
+  }
+  if(comp2Iso){
+    parts.push(startIso ? `Competition 2 falls in week ${dateToWeekNumber(startIso,comp2Iso)}.` : `Set Season Start to calculate Competition 2's week.`);
+  }
+  document.getElementById('comp-weeks-preview').textContent = parts.join(' ');
+}
+function fmtDate(d){ return new Date(d+'T00:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'}); }
+function round50(n){ return Math.round(n/50)*50; }
+
+function assignPhases(numWeeks, downFreq, weeksToComp1, weeksToComp2, miniTaperWeeks){
+  const mainTaperLen = numWeeks >= TAPER_LEN_THRESHOLD_WEEKS ? TAPER_LEN_LONG : TAPER_LEN_SHORT;
+  const phases = new Array(numWeeks).fill('build');
+  const mainTaperStart = numWeeks - mainTaperLen;
+  for(let i=mainTaperStart;i<numWeeks;i++){ if(i>=0) phases[i]='taper'; }
+
+  const comp1Valid = weeksToComp1 && weeksToComp1 >= (miniTaperWeeks+1) && weeksToComp1 < mainTaperStart;
+  if(comp1Valid){
+    const s = weeksToComp1 - miniTaperWeeks;
+    for(let i=s;i<weeksToComp1;i++){ phases[i]='taper'; }
+  }
+  // Competition 2 only counts if Competition 1 is also set, comes after it with room
+  // for at least one rebuild week between the two mini-tapers, and still fits before
+  // the main taper begins.
+  const comp2Valid = comp1Valid && weeksToComp2 && (weeksToComp2 - miniTaperWeeks) > weeksToComp1 && weeksToComp2 < mainTaperStart;
+  if(comp2Valid){
+    const s2 = weeksToComp2 - miniTaperWeeks;
+    for(let i=s2;i<weeksToComp2;i++){ phases[i]='taper'; }
+  }
+
+  // Down weeks at the usual cadence within build stretches only — the cadence resets
+  // after passing through any taper block, so each rebuild segment (after a mini-taper)
+  // gets its own fresh down-week cycle rather than counting from season start.
+  // Never place one immediately before a taper, though: that position is supposed to
+  // be the genuine, undiluted peak the whole build worked toward — the taper's own
+  // depth is computed as a fraction of that intended peak regardless, so a down week
+  // there doesn't get "extra rest," it just means the true peak never actually
+  // happens and the taper starts from an already-reduced state. A down week is also
+  // redundant right there anyway, since the taper itself is about to serve as the
+  // recovery period. If the cadence would place one there, skip it — the taper's own
+  // reset means nothing about the overall down-week rhythm is lost by skipping it.
+  let sinceDown = 0;
+  for(let i=0;i<numWeeks;i++){
+    if(phases[i]==='taper'){ sinceDown = 0; continue; }
+    sinceDown++;
+    const nextIsTaper = (i+1 < numWeeks) && phases[i+1]==='taper';
+    if(sinceDown >= downFreq && !nextIsTaper){ phases[i]='down'; sinceDown = 0; }
+  }
+  return phases;
+}
+
+/* Finds contiguous runs of 'taper' in a phases array. Zero blocks = no taper (shouldn't
+   normally happen), one block = single-peak season, two blocks = dual-peak season
+   (comp1 mini-taper first, comp2 main taper second, since they're in week order). */
+function findTaperBlocks(phases){
+  const blocks = [];
+  let i = 0;
+  while(i < phases.length){
+    if(phases[i] === 'taper'){
+      const start = i;
+      while(i < phases.length && phases[i] === 'taper') i++;
+      blocks.push({start, end:i});
+    } else {
+      i++;
+    }
+  }
+  return blocks;
+}
+
+/* Same idea as findTaperBlocks, but for the build/down stretches BETWEEN taper
+   blocks — used by the peak-edit recalculation to know which segment (and which
+   original target peak) a given week belongs to. */
+function findBuildSegments(phases){
+  const segments = [];
+  let i = 0;
+  while(i < phases.length){
+    if(phases[i] !== 'taper'){
+      const start = i;
+      while(i < phases.length && phases[i] !== 'taper') i++;
+      segments.push({start, end:i});
+    } else {
+      i++;
+    }
+  }
+  return segments;
+}
+
+/* The core build-segment computation, extracted as a standalone function so both
+   plan generation (suggestVolumes) and peak-edit recalculation use the EXACT same
+   logic — including subtle interactions like a down week coinciding with the
+   plateau/peak position, which a simplified reimplementation missed and produced
+   a peak week that wasn't quite the unchanged target. Returns a plain object
+   mapping absolute week index -> computed volume for the given range. */
+function computeBuildSegmentVolumes(phasesArr, startIdx, endIdxExclusive, segPeak, peakFracTarget, usePlateau, level, downMult, applyReentryDamping, rampStartFrac){
+  const idxs = [];
+  for(let i=startIdx;i<endIdxExclusive;i++) idxs.push(i);
+  const B = idxs.length;
+  const out = {};
+  if(B===0) return out;
+  const plateauWeeks = usePlateau ? Math.min(level.plateauWeeks, B) : 0;
+  const rampLen = Math.max(1, B - plateauWeeks);
+  const rampTarget = usePlateau ? peakFracTarget * level.plateauFrac : peakFracTarget;
+  idxs.forEach((idx,j)=>{
+    const posInPlateau = j - (B - plateauWeeks);
+    let trend;
+    if(plateauWeeks>0 && posInPlateau === plateauWeeks-1){
+      trend = peakFracTarget; // the single true-peak week, right before this segment's taper
+    } else if(plateauWeeks>0 && posInPlateau >= 0){
+      trend = rampTarget; // held just under peak for a stretch first
+    } else {
+      const startFrac = rampStartFrac !== undefined ? rampStartFrac : 0.55 * peakFracTarget;
+      trend = rampLen>1 ? startFrac + (rampTarget-startFrac)*(j/(rampLen-1)) : rampTarget;
+    }
+    if(applyReentryDamping && j < REENTRY_WEEKS){
+      const reentryFloor = REENTRY_VOLUME_START_FRAC * peakFracTarget;
+      const blend = (j+1)/(REENTRY_WEEKS+1);
+      trend = reentryFloor*(1-blend) + trend*blend;
+    }
+    const mult = phasesArr[idx]==='down' ? trend*downMult : trend;
+    out[idx] = round50(segPeak*mult);
+  });
+  return out;
+}
+
+/* Elite cohort research on the 25 weeks before swimmers' season-best performances:
+   the FASTEST profile showed progressive load increases between macrocycles within
+   a single season; the SLOWEST profile was a "stable flat pattern" with load
+   actually decreasing between macrocycles. Holding the exact same peak flat across
+   multiple within-season competitions isn't what the best real outcomes look like —
+   each subsequent competition should step up a bit from the one before it. Per
+   direct user confirmation: a flat 3% step between each competition (not scaled by
+   weeks between them) — Comp 1 uses Peak 1 (already validated higher than last
+   season via the normal recommendation), Comp 2 steps up 3% from Comp 1, the main
+   event steps up another 3% from whichever competition came last. This is smaller
+   and different from the earlier removed "second progression step" (which
+   duplicated a FULL season's safety-capped rate and roughly doubled the total safe
+   increase) — this is a much smaller within-season step, confirmed acceptable by
+   the user specifically. */
+const STAGE_STEP_PCT = 3;
+
+function suggestVolumes(phases, peak1, levelKey, peak2, eventKey){
+  const level = LEVELS[levelKey] || LEVELS.elite;
+  const downMult = 1 - (DOWN_CUT_PCT/100);
+  const volumes = new Array(phases.length).fill(0);
+  const taperBlocks = findTaperBlocks(phases);
+
+  /* Detraining research: aerobic fitness losses become measurable starting around the
+     2-week mark of complete inactivity, with VO2max declines continuing through 4+
+     weeks off — squarely the window described for this app's typical off-season break.
+     Direct practitioner guidance for returning after such a break: take whatever
+     volume you'd otherwise plan and cut it in half to start, then apply the standard
+     10%/week increase from there. The ramp below already starts at 55% of peak as a
+     generic "gradual build" default, unrelated to any actual layoff — that's too high
+     as a genuine post-break restart point regardless of how high the season's peak
+     target is. This dampens the season's OPENING weeks specifically (not the rebuild
+     after a mid-season mini-taper, which is a short dip, not a real break) down toward
+     roughly a third of what the normal ramp would otherwise give, blending back to the
+     normal curve by the same REENTRY_WEEKS window used for the zone-mix blend. Honest
+     caveat: the week-to-week % increases in this narrow window run a bit above the
+     strict 10%/week guideline on their own, since absolute loads are still low early —
+     consistent with how "halve it, then 10%/week" is actually applied in practice, but
+     worth knowing this isn't a strict 10% ramp throughout. */
+  function fillBuildSegment(startIdx, endIdxExclusive, segPeak, peakFracTarget, usePlateau, applyReentryDamping, rampStartFrac){
+    const result = computeBuildSegmentVolumes(phases, startIdx, endIdxExclusive, segPeak, peakFracTarget, usePlateau, level, downMult, applyReentryDamping, rampStartFrac);
+    Object.keys(result).forEach(idx=>{ volumes[idx] = result[idx]; });
+  }
+
+  function fillTaper(block, segPeak, peakFracForThisTaper, highFrac, lowFrac){
+    const T = block.end - block.start;
+    for(let k=0;k<T;k++){
+      const t = T>1 ? k/(T-1) : 1;
+      const mult = T>1 ? highFrac - (highFrac-lowFrac)*Math.pow(t,2) : lowFrac;
+      volumes[block.start+k] = round50(segPeak*peakFracForThisTaper*mult);
+    }
+  }
+
+  // Every block except the last is a secondary/mini-taper (targets peak1, no plateau,
+  // shallow, event-scaled cut). The last block is always the main/final taper
+  // (targets peakFinal, with the plateau-before-peak logic, the deeper front-loaded
+  // event-specific taperHigh->taperLow curve from ZONE_PROFILES). Reentry volume
+  // damping only applies to the very first build segment of the whole season
+  // (segStart===0) — a real off-season break, not the short dip after a mini-taper.
+  const eventProfile = ZONE_PROFILES[eventKey] || ZONE_PROFILES.mid;
+  // Mini-taper depth now scales off the SAME event-specific reduction as the main
+  // taper, at roughly half its depth — a secondary meet still needs a real cut, just
+  // a shallower one than the season's peak event. For distance/pure-distance this
+  // lands close to the old flat 25% (confirming that number was already reasonable
+  // for their aerobic-conditioning limiter); for sprint/mid it deepens meaningfully
+  // beyond the old flat cut, since their neuromuscular-freshness limiter needs more
+  // real unloading even ahead of a lesser meet, per the same research used for the
+  // main taper split above.
+  // Mini-taper now declines across its own weeks the same way the main taper does,
+  // rather than holding one flat value for every week in the block — a 2-week
+  // mini-taper showing the identical number twice isn't really a taper, just a
+  // step-and-hold. Each endpoint is half the main taper's own reduction from peak,
+  // so a 1-week mini-taper (or a block's final week) lands exactly on the depth
+  // already validated earlier, while longer mini-tapers now genuinely descend
+  // toward it instead of sitting flat at it from week one.
+  const miniTaperHigh = 1 - (1-eventProfile.taperHigh)*0.5;
+  const miniTaperLow = 1 - (1-eventProfile.taperLow)*0.5;
+  // A rebuild should pick up right where the preceding taper actually left off — its
+  // low point already represents the fully-suppressed, "raced fresh" state, and
+  // there's no reason to push below that once the competition is over. An earlier
+  // version added a further 8% dip here to model a brief post-race recovery day or
+  // two, but that reasoning doesn't survive being applied to a whole WEEK rather
+  // than a day or two — the taper's own final week was never meant to be sustained
+   // or dropped below, only touched once for racing, so the week right after should
+  // resume at that level, not sink further.
+  let segStart = 0;
+  let carryStartFrac; // undefined for the season's true opening segment — uses the normal 55% default there
+  const secondaryTapers = taperBlocks.slice(0, -1);
+  const mainTaper = taperBlocks[taperBlocks.length-1];
+
+  let stagePeak = peak1;
+  let prevStagePeak = null; // tracks which peak carryStartFrac was expressed relative to
+  secondaryTapers.forEach(tb=>{
+    fillBuildSegment(segStart, tb.start, stagePeak, 1.0, false, segStart===0, carryStartFrac);
+    fillTaper(tb, stagePeak, 1.0, miniTaperHigh, miniTaperLow);
+    carryStartFrac = miniTaperLow; // fraction of THIS stagePeak, this taper's own ending reference — no further dip
+    prevStagePeak = stagePeak;
+    segStart = tb.end;
+    stagePeak = stagePeak * (1 + STAGE_STEP_PCT/100); // the NEXT stage (secondary or main) steps up from this one
+  });
+  const finalBuildEnd = mainTaper ? mainTaper.start : phases.length;
+  // Rescale the carried fraction if the final segment's target differs from whichever
+  // stage the fraction was originally expressed relative to.
+  const finalRampStart = (carryStartFrac !== undefined && prevStagePeak) ? carryStartFrac * (prevStagePeak/stagePeak) : undefined;
+  fillBuildSegment(segStart, finalBuildEnd, stagePeak, 1.0, true, segStart===0, finalRampStart);
+  if(mainTaper) fillTaper(mainTaper, stagePeak, 1.0, eventProfile.taperHigh, eventProfile.taperLow);
+  return {volumes, finalPeak: stagePeak};
+}
+
+/* Only taper weeks get flagged for the zone-mix shift, not any pre-taper plateau
+   weeks. The plateau still holds volume at or near season peak — shifting the
+   intensity mix there too would stack more relative high-intensity work on top of
+   already-peak volume, right before the athlete is supposed to start unloading.
+   Real taper research shows the mix shifting AS volume comes down during taper
+   itself, not stacked on top of still-peak volume beforehand. */
+function computeRaceSpecificFlags(phases, levelKey){
+  const flags = new Array(phases.length).fill(false);
+  phases.forEach((p,i)=>{ if(p==='taper') flags[i] = true; });
+  return flags;
+}
+
+/* 94% of surveyed national/world-class swimming coaches report shifting intensity
+   distribution by season phase, most commonly pyramidal early -> polarized approaching
+   racing (Fernandes et al. coach survey, 2025). Polarized means less time in the
+   threshold zone (EN2) and more at the extremes — so race-specific weeks shift some
+   EN2 into EN1 (aerobic base) and SP3 (top-end race pace) rather than staying at the
+   base pyramidal split all season. Magnitude (8 points) is a moderate, non-extreme
+   interpretation — a real elite 50m sprinter's logged data showed a far more radical
+   swing (down to 0% threshold work in general prep), but that's one athlete's specific
+   approach, not something to copy wholesale into a general-purpose default. */
+/* Proportional, not flat: cuts EN2 by 15% of its OWN value (not a fixed point
+   amount), and sends most of the freed volume to EN1 rather than splitting it evenly
+   with SP3. An even split disproportionately inflated small SP3 baselines — e.g. Pure
+   Distance's 0.7% SP3 was jumping to 4.7%, a 571% relative increase, for a total
+   8-point flat shift split 50/50. Weighting 75/25 toward EN1 keeps the "more
+   aerobic base, a bit more race-pace touch" spirit without blowing up the smallest
+   zone, and since this now only applies during taper (see computeRaceSpecificFlags),
+   the absolute yardage effect is modest anyway — taper volume itself is already
+   well below peak. */
+function polarizeShift(pct){
+  const shift = pct.EN2 * 0.15;
+  return Object.assign({}, pct, {
+    EN2: pct.EN2 - shift,
+    EN1: pct.EN1 + shift*0.75,
+    SP3: pct.SP3 + shift*0.25,
+  });
+}
+
+/* ---------- unified peak volume recommendation ----------
+   One recommendation, not two. Uses previous season's actual volume as the primary
+   basis when available (real personal history beats a generic population comparison);
+   falls back to sanity-checking the typed target against event-type norms when there's
+   no prior-season number to build from. Either way, age and sex apply as a safety cap
+   on the growth rate — not because of a physiological difference in this age/sex
+   dimension specifically, but because rapid volume increases carry documented added
+   injury risk for younger and (per the RED-S literature) female athletes, so the same
+   progression rate shouldn't apply uniformly regardless of who it's for. */
+/* Shared by the volume recommendation and by Peak 2's within-season step-up:
+   the same level/event/quad progression rate, with the same age/sex safety caps. */
+function computeSafeProgressionPct(levelKey, eventKey, quadKey, age, sex){
+  const level = LEVELS[levelKey] || LEVELS.elite;
+  const eventMult = EVENT_PROGRESSION_MULT[eventKey] || 1.0;
+  const quadMult = QUAD_MULT[quadKey] || 1.0;
+  let pct = level.progressionPct * eventMult * quadMult;
+  if(age < 16) pct = Math.min(pct, 10);
+  if(sex==='female' && age < 18) pct = pct*0.85;
+  return pct;
+}
+
+function updateVolumeRecommendation(){
+  const desired = Number(document.getElementById('in-peak').value)||0;
+  const prevPeak = Number(document.getElementById('in-prev-peak').value)||0;
+  const age = Number(document.getElementById('in-age').value)||24;
+  const sex = document.getElementById('in-sex').value;
+  const levelKey = document.getElementById('in-level').value;
+  const level = LEVELS[levelKey];
+  const eventKey = document.getElementById('in-event-type').value;
+  const eventMult = EVENT_PROGRESSION_MULT[eventKey] || 1.0;
+  const profile = ZONE_PROFILES[eventKey];
+  const card = document.getElementById('volume-rec');
+  const text = document.getElementById('volume-rec-text');
+
+  if(!level || !profile || (!prevPeak && !desired)){
+    card.style.display = 'none';
+    return;
+  }
+
+  let recommended, basisText, safetyNote = '';
+
+  if(prevPeak){
+    // Basis: year-over-year growth from actual previous-season volume
+    const quadKey = document.getElementById('in-quad').value;
+    const quadMult = QUAD_MULT[quadKey] || 1.0;
+    let pct = level.progressionPct * eventMult * quadMult;
+    const uncappedPct = Math.round(pct*10)/10;
+    if(age < 16){
+      const capped = Math.min(pct, 10);
+      if(capped < pct){ pct = capped; safetyNote += ` Capped near 10% for age ${age} — rapid volume jumps carry added injury risk while still growing, regardless of what level or event would otherwise suggest.`; }
+    }
+    if(sex==='female' && age < 18){
+      const before = pct;
+      pct = pct*0.85;
+      if(pct < before) safetyNote += ` Trimmed further as an added safety margin for a female athlete under 18 (RED-S/bone-health risk with fast volume growth).`;
+    }
+    const effectivePct = Math.round(pct*10)/10;
+    recommended = round50(prevPeak*(1+pct/100));
+    const levelNote = quadKey==='twoplus'
+      ? `at 2+ years out from the major goal, this is treated as a base-building phase for every level — always still building, not at capacity, regardless of what level alone would suggest`
+      : levelKey==='elite'
+      ? `this assumes an athlete still in an active multi-year buildup rather than already at their personal ceiling — a genuinely plateaued elite athlete would reasonably want less`
+      : `someone already near that ceiling has less room to add than someone further from it`;
+    const quadNote = quadKey ? ` Quad position (${QUAD_LABEL[quadKey]}) then applies a further ${quadMult}x — ${quadKey==='twoplus'?'boosted, this is the phase for the biggest volume gains':quadKey==='compyear'?'pulled back, the year of the actual competition tends to shift toward intensity rather than continuing to add volume':'roughly unchanged, a steady middle year'}.` : '';
+    const comp1Note = document.getElementById('in-comp1-date').value ? ` This is Competition 1's target. Each competition after it steps up a further ${STAGE_STEP_PCT}% from the one before — a small within-season increase, not another full season's worth — down to the main event at the end.` : '';
+    basisText = `Built from last season's peak of ${prevPeak.toLocaleString()} yd: world-class swimmers carry roughly 15-30% more total volume than lower-level swimmers overall, which is why ${level.label} on its own suggests about a ${level.progressionPct}% step this year — ${levelNote}. Event orientation adjusts that (${eventKey==='sprint'?'trimmed down, sprint gains lean more on intensity than yardage':eventKey==='distance'?'bumped up, distance improvement stays volume-driven longer':eventKey==='puredistance'?'bumped up further, pure distance/open water leans hardest on volume':'unchanged, the reference point'}).${quadNote} Combined: ${uncappedPct}% before any safety cap.${safetyNote} Net recommendation: ${effectivePct}% over last season → ${recommended.toLocaleString()} yd.${comp1Note}`;
+  } else {
+    // No prior-season number — the raw event-norm figure is a long-term reference
+    // point (e.g. world-class distance/pure-distance norms), NOT something to jump to
+    // in one season from an unknown current baseline. Cap the single-season step the
+    // same safe way the year-over-year path does, using the typed target as a stand-in
+    // for "current" volume, so a lower-volume program isn't pointed at a huge one-step
+    // jump just because no prior-season number was given.
+    const quadKey = document.getElementById('in-quad').value;
+    const quadMult = QUAD_MULT[quadKey] || 1.0;
+    const rawEventNorm = round50(desired*profile.peakMult);
+    let capPct = level.progressionPct * eventMult * quadMult;
+    if(age < 16) capPct = Math.min(capPct, 10);
+    if(sex==='female' && age < 18) capPct = capPct*0.85;
+    capPct = Math.round(capPct*10)/10;
+    const safeCap = round50(desired*(1+capPct/100));
+    const pctDiff = Math.round((profile.peakMult-1)*100);
+
+    if(rawEventNorm > safeCap){
+      recommended = safeCap;
+      const jumpPct = Math.round((rawEventNorm/desired-1)*100);
+      basisText = `No previous-season volume entered, so this checks your typed target (${desired.toLocaleString()} yd) against what's typical for ${profile.label}: the long-term benchmark sits around ${rawEventNorm.toLocaleString()} yd (${Math.abs(pctDiff)}% ${pctDiff>0?'higher':'lower'} than a 500 & Down baseline) — but jumping there in one season would be a ${jumpPct}% increase, too large a single step regardless of level or event. Capped at a safer ${capPct}% this season instead: ${recommended.toLocaleString()} yd. Keep progressing toward the ${rawEventNorm.toLocaleString()} yd benchmark over multiple seasons, not in one jump.`;
+    } else {
+      recommended = rawEventNorm;
+      basisText = `No previous-season volume entered, so this checks your typed target (${desired.toLocaleString()} yd) against what's typical for ${profile.label} instead of year-over-year growth: that's usually ${Math.abs(pctDiff)}% ${pctDiff>0?'higher':'lower'} than a 500 & Down baseline. Recommended: ${recommended.toLocaleString()} yd. Enter last season's peak above for a growth-based recommendation instead.`;
+    }
+  }
+
+  text.textContent = basisText;
+  card.style.display = 'block';
+  document.getElementById('use-recommended-btn').dataset.value = recommended;
+  document.getElementById('use-recommended-btn').classList.remove('chosen');
+  document.getElementById('keep-mine-btn').classList.remove('chosen');
+}
+['in-peak','in-prev-peak','in-age','in-minitaper'].forEach(id=>
+  document.getElementById(id).addEventListener('input', updateVolumeRecommendation)
+);
+['in-sex','in-event-type','in-level','in-quad'].forEach(id=>
+  document.getElementById(id).addEventListener('change', updateVolumeRecommendation)
+);
+document.getElementById('use-recommended-btn').addEventListener('click', (e)=>{
+  document.getElementById('in-peak').value = e.target.dataset.value;
+  e.target.classList.add('chosen');
+  document.getElementById('keep-mine-btn').classList.remove('chosen');
+});
+document.getElementById('keep-mine-btn').addEventListener('click', (e)=>{
+  e.target.classList.add('chosen');
+  document.getElementById('use-recommended-btn').classList.remove('chosen');
+});
+
+/* ---------- youth caution ---------- */
+function updateYouthCaution(){
+  const age = Number(document.getElementById('in-age').value)||24;
+  const sex = document.getElementById('in-sex').value;
+  document.getElementById('youth-caution').classList.toggle('show', isYouthAge(age));
+  document.getElementById('female-caution').classList.toggle('show', sex==='female' && age < 18);
+}
+document.getElementById('in-age').addEventListener('input', updateYouthCaution);
+document.getElementById('in-sex').addEventListener('change', updateYouthCaution);
+
+/* ---------- generate ---------- */
+function generatePlan(){
+  const numWeeks = Math.max(1, Number(document.getElementById('in-weeks').value)||1);
+  const startVal = document.getElementById('in-start').value || isoDate(new Date());
+  const peak = Number(document.getElementById('in-peak').value)||0;
+  const age = Math.max(8, Number(document.getElementById('in-age').value)||24);
+  const sex = document.getElementById('in-sex').value;
+  const eventType = document.getElementById('in-event-type').value;
+  const level = document.getElementById('in-level').value;
+  const prevPeak = Number(document.getElementById('in-prev-peak').value)||0;
+  const quadPosition = document.getElementById('in-quad').value;
+  const comp1DateIso = document.getElementById('in-comp1-date').value;
+  const comp2DateIso = document.getElementById('in-comp2-date').value;
+  const weeksToComp1 = dateToWeekNumber(startVal, comp1DateIso);
+  const weeksToComp2 = dateToWeekNumber(startVal, comp2DateIso);
+  const miniTaperDays = Math.max(3, Number(document.getElementById('in-minitaper').value)||DEFAULT_MINI_TAPER_DAYS);
+  const miniTaperWeeks = Math.ceil(miniTaperDays/7);
+  const downFreq = downFreqForAge(age);
+
+  // Peak Final intentionally equals Peak 1 by default now, not an independent
+  // additional step beyond it. The progression % (level/event/quad, safety-capped)
+  // already represents this SEASON's full safe increase over last year's peak —
+  // applying it again on top of Peak 1 was double-counting the same safety allowance
+  // twice within one season (a real bug: two ~9% steps compound to ~19%, roughly
+  // double the intended safe rate). If a coach genuinely wants the main event to peak
+  // higher than a secondary competition, that's a deliberate choice best made by
+  // editing individual weeks directly (already supported in the season table) rather
+  // than the app silently re-applying the progression formula a second time.
+  // Peak Final is no longer computed here — suggestVolumes now chains it internally,
+  // stepping each competition up by STAGE_STEP_PCT from the one before it (per user
+  // confirmation), returning the actual final stage peak for display/chart use.
+  settings = {numWeeks, startDate:startVal, peakVolume:peak, age, sex, eventType, level, prevPeak, quadPosition, weeksToComp1, weeksToComp2, miniTaperDays, comp1Date:comp1DateIso, comp2Date:comp2DateIso};
+  const phases = assignPhases(numWeeks, downFreq, weeksToComp1, weeksToComp2, miniTaperWeeks);
+  const genResult = suggestVolumes(phases, peak, level, null, eventType);
+  const volumes = genResult.volumes;
+  settings.peak2 = genResult.finalPeak;
+  const raceSpecificFlags = computeRaceSpecificFlags(phases, level);
+
+  const start = new Date(startVal+'T00:00:00');
+  weeks = phases.map((phase,i)=>{
+    const d = new Date(start); d.setDate(d.getDate()+7*i);
+    return {weekNum:i+1, date:isoDate(d), phase, volume:volumes[i], raceSpecific:raceSpecificFlags[i]};
+  });
+
+  savePlan();
+  updateYouthCaution();
+  renderAll();
+}
+document.getElementById('generate-btn').addEventListener('click', generatePlan);
+
+/* ---------- chart toggle ---------- */
+document.getElementById('chart-toggle-btn').addEventListener('click', ()=>{
+  const wrap = document.getElementById('chart-wrap');
+  const open = wrap.classList.toggle('open');
+  document.getElementById('chart-toggle-btn').textContent = open ? 'Hide Volume Chart' : 'Show Volume Chart';
+  if(open) renderChart();
+});
+
+/* ---------- export to CSV (opens directly in Excel or Google Sheets) ---------- */
+/* Labels a taper week as "Taper" (single-peak season) or "Taper 1"/"Taper 2"
+   (dual-peak season with a mid-season competition), by locating which contiguous
+   taper block a given week index falls in. */
+function taperLabelFor(weekIdx){
+  const phasesArr = weeks.map(w=>w.phase);
+  const blocks = findTaperBlocks(phasesArr);
+  if(blocks.length <= 1) return 'Taper';
+  const blockNum = blocks.findIndex(b=> weekIdx >= b.start && weekIdx < b.end);
+  const isLast = blockNum === blocks.length-1;
+  return isLast ? `Taper ${blocks.length} (Main)` : `Taper ${blockNum+1} (Comp ${blockNum+1})`;
+}
+
+function xmlEscape(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function xmlCell(v){
+  const isNum = typeof v === 'number';
+  return `<Cell><Data ss:Type="${isNum?'Number':'String'}">${xmlEscape(v)}</Data></Cell>`;
+}
+function xmlRow(cells){
+  return `<Row>${cells.map(xmlCell).join('')}</Row>`;
+}
+
+function exportCSV(){
+  if(weeks.length===0){
+    document.getElementById('setup-status').textContent = 'Generate a plan first, then export.';
+    return;
+  }
+  const profile = ZONE_PROFILES[settings.eventType] || ZONE_PROFILES.mid;
+  const basePct = blendedZonePct(settings.eventType, settings.age, settings.sex);
+  const header = ['Week','Date','Phase','Total (yd)', ...ZONES.map(z=>z.key+' ('+z.label+')')];
+  const totals = {}; ZONES.forEach(z=> totals[z.key]=0);
+  let grand = 0;
+
+  const dataRows = weeks.map((w,i)=>{
+    const pct = fullZonePctForWeek(w, basePct);
+    const zoneVals = ZONES.map(z=>{
+      const yd = Math.round(w.volume*pct[z.key]);
+      totals[z.key]+=yd;
+      return yd;
+    });
+    grand += w.volume;
+    const phaseLabel = w.phase==='down' ? 'Down' : w.phase==='taper' ? taperLabelFor(i) : (w.raceSpecific ? 'Race-specific' : 'Build');
+    return [w.weekNum, w.date, phaseLabel, w.volume, ...zoneVals];
+  });
+  const totalRow = ['Total','','', grand, ...ZONES.map(z=>totals[z.key])];
+
+  const rowsXML = [header, ...dataRows, totalRow].map(xmlRow).join('');
+
+  const xml = '<?xml version="1.0"?>\n' +
+    '<?mso-application progid="Excel.Sheet"?>\n' +
+    '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"\n' +
+    ' xmlns:o="urn:schemas-microsoft-com:office:office"\n' +
+    ' xmlns:x="urn:schemas-microsoft-com:office:excel"\n' +
+    ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"\n' +
+    ' xmlns:html="http://www.w3.org/TR/REC-html40">\n' +
+    ' <Worksheet ss:Name="Season Plan">\n' +
+    '  <Table>\n' +
+    rowsXML +
+    '\n  </Table>\n' +
+    ' </Worksheet>\n' +
+    '</Workbook>';
+
+  const blob = new Blob([xml], {type:'application/vnd.ms-excel'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `season-plan-${settings.startDate||isoDate(new Date())}.xls`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+document.getElementById('export-btn').addEventListener('click', exportCSV);
+
+/* ---------- calendar date picker ---------- */
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+let calendarViewDate = new Date();
+let calendarTargetHidden = 'in-start';
+let calendarTargetBtn = 'in-start-btn';
+
+function formatDateDisplay(iso){
+  if(!iso) return 'Select a date';
+  const d = new Date(iso+'T00:00:00');
+  return d.toLocaleDateString(undefined,{month:'short', day:'numeric', year:'numeric'});
+}
+
+function renderCalendarGrid(){
+  const grid = document.getElementById('cal-grid');
+  const label = document.getElementById('cal-month-label');
+  const year = calendarViewDate.getFullYear();
+  const month = calendarViewDate.getMonth();
+  label.textContent = MONTH_NAMES[month] + ' ' + year;
+
+  const firstOfMonth = new Date(year, month, 1);
+  const startOffset = firstOfMonth.getDay(); // 0=Sun
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const daysInPrevMonth = new Date(year, month, 0).getDate();
+
+  const todayIso = isoDate(new Date());
+  const selectedIso = document.getElementById(calendarTargetHidden).value;
+
+  const cells = [];
+  // leading days from previous month
+  for(let i=0;i<startOffset;i++){
+    const dayNum = daysInPrevMonth - startOffset + 1 + i;
+    cells.push({dayNum, otherMonth:true, iso:null});
+  }
+  // days in current month
+  for(let d=1; d<=daysInMonth; d++){
+    const iso = year+'-'+String(month+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+    cells.push({dayNum:d, otherMonth:false, iso});
+  }
+  // trailing days to fill last week
+  while(cells.length % 7 !== 0){
+    const dayNum = cells.length - (startOffset+daysInMonth) + 1;
+    cells.push({dayNum, otherMonth:true, iso:null});
+  }
+
+  grid.innerHTML = cells.map(c=>{
+    if(c.otherMonth) return `<button type="button" class="cal-day other-month" disabled>${c.dayNum}</button>`;
+    const classes = ['cal-day'];
+    if(c.iso===todayIso) classes.push('today');
+    if(c.iso===selectedIso) classes.push('selected');
+    return `<button type="button" class="cal-day ${classes.join(' ')}" data-iso="${c.iso}">${c.dayNum}</button>`;
+  }).join('');
+
+  grid.querySelectorAll('.cal-day[data-iso]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const iso = btn.dataset.iso;
+      document.getElementById(calendarTargetHidden).value = iso;
+      document.getElementById(calendarTargetBtn).textContent = formatDateDisplay(iso);
+      closeCalendar();
+      updateCompWeeksPreview();
+      if(calendarTargetHidden !== 'in-start') updateVolumeRecommendation();
+    });
+  });
+}
+
+function openCalendar(hiddenId, btnId){
+  calendarTargetHidden = hiddenId;
+  calendarTargetBtn = btnId;
+  const popup = document.getElementById('calendar-popup');
+  // Reparent the single shared popup into whichever field's container triggered it,
+  // so its position:absolute (relative to that field) lands directly under the
+  // correct button rather than always appearing under Season Start.
+  const fieldContainer = document.getElementById(btnId).closest('.field');
+  if(fieldContainer && popup.parentElement !== fieldContainer) fieldContainer.appendChild(popup);
+  const currentVal = document.getElementById(hiddenId).value;
+  calendarViewDate = currentVal ? new Date(currentVal+'T00:00:00') : new Date();
+  renderCalendarGrid();
+  popup.classList.add('open');
+}
+function closeCalendar(){
+  document.getElementById('calendar-popup').classList.remove('open');
+}
+document.getElementById('in-start-btn').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  const popup = document.getElementById('calendar-popup');
+  (popup.classList.contains('open') && calendarTargetHidden==='in-start') ? closeCalendar() : openCalendar('in-start','in-start-btn');
+});
+document.getElementById('in-comp1-btn').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  const popup = document.getElementById('calendar-popup');
+  (popup.classList.contains('open') && calendarTargetHidden==='in-comp1-date') ? closeCalendar() : openCalendar('in-comp1-date','in-comp1-btn');
+});
+document.getElementById('in-comp2-btn').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  const popup = document.getElementById('calendar-popup');
+  (popup.classList.contains('open') && calendarTargetHidden==='in-comp2-date') ? closeCalendar() : openCalendar('in-comp2-date','in-comp2-btn');
+});
+document.getElementById('cal-prev').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  calendarViewDate = new Date(calendarViewDate.getFullYear(), calendarViewDate.getMonth()-1, 1);
+  renderCalendarGrid();
+});
+document.getElementById('cal-next').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  calendarViewDate = new Date(calendarViewDate.getFullYear(), calendarViewDate.getMonth()+1, 1);
+  renderCalendarGrid();
+});
+document.addEventListener('click', (e)=>{
+  const popup = document.getElementById('calendar-popup');
+  const btn = document.getElementById(calendarTargetBtn);
+  if(popup.classList.contains('open') && !popup.contains(e.target) && e.target!==btn){
+    closeCalendar();
+  }
+});
+
+/* ---------- clear inputs ---------- */
+async function clearAll(){
+  document.getElementById('in-profile-name').value = '';
+  document.getElementById('in-profile-select').value = '';
+  document.getElementById('profile-status').textContent = '';
+  document.getElementById('in-weeks').value = '';
+  document.getElementById('in-comp1-date').value = '';
+  document.getElementById('in-comp1-btn').textContent = 'Select a date';
+  document.getElementById('in-comp2-date').value = '';
+  document.getElementById('in-comp2-btn').textContent = 'Select a date — needs Comp 1 set';
+  document.getElementById('comp-weeks-preview').textContent = '';
+  document.getElementById('in-minitaper').value = '';
+  document.getElementById('in-start').value = '';
+  document.getElementById('in-start-btn').textContent = 'Select a date';
+  document.getElementById('in-peak').value = '';
+  document.getElementById('in-age').value = '';
+  document.getElementById('in-sex').value = 'unspecified';
+  document.getElementById('in-event-type').value = '';
+  document.getElementById('in-quad').value = '';
+  document.getElementById('in-prev-peak').value = '';
+  document.getElementById('in-level').value = '';
+  document.getElementById('volume-rec').style.display = 'none';
+  document.getElementById('youth-caution').classList.remove('show');
+  document.getElementById('female-caution').classList.remove('show');
+  document.getElementById('chart-wrap').classList.remove('open');
+  document.getElementById('chart-toggle-btn').textContent = 'Show Volume Chart';
+
+  weeks = [];
+  settings = {numWeeks:0, startDate:'', peakVolume:0, peak2:0, age:0, sex:'unspecified', eventType:'', quadPosition:'', level:'', prevPeak:0, weeksToComp1:0, weeksToComp2:0, miniTaperDays:0};
+
+  try{ localStorage.removeItem(STORAGE_KEY); }catch(e){ /* nothing to delete */ }
+  renderAll();
+  document.getElementById('setup-status').textContent = 'Cleared — enter new details and generate a plan.';
+}
+
+document.getElementById('clear-btn').addEventListener('click', clearAll);
+
+/* ---------- rendering ---------- */
+function laneLineSVG(){
+  let floats = '';
+  for(let x=10; x<760; x+=34){ floats += `<circle cx="${x}" cy="11" r="5" fill="#C8102E" opacity="0.85"/>`; }
+  return `<svg viewBox="0 0 760 22" preserveAspectRatio="none"><line x1="0" y1="11" x2="760" y2="11" stroke="#204A5C" stroke-width="2"/>${floats}</svg>`;
+}
+document.querySelectorAll('.laneline').forEach(el=> el.innerHTML = laneLineSVG());
+
+const PHASE_COLOR = {build:'#4C8BF5', down:'#35C97C', taper:'#C8102E'};
+function renderChart(){
+  const container = document.getElementById('chart-container');
+  if(weeks.length===0){ container.innerHTML = '<div class="empty-state">Generate a plan first.</div>'; return; }
+
+  const seasonPeak = Math.max(settings.peakVolume, settings.peak2||0);
+  const W = 900, H = 300, padL = 46, padB = 30, padT = 14, padR = 10;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const maxVal = Math.max(seasonPeak, ...weeks.map(w=>w.volume)) * 1.08;
+  const n = weeks.length;
+  const gap = 4;
+  const barW = Math.max(2, plotW/n - gap);
+
+  const peakY = padT + plotH - (seasonPeak/maxVal)*plotH;
+
+  let bars = '';
+  weeks.forEach((w,i)=>{
+    const x = padL + i*(plotW/n) + gap/2;
+    const h = (w.volume/maxVal)*plotH;
+    const y = padT + plotH - h;
+    const showLabel = n<=20 || i%2===0 || i===n-1;
+    bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" fill="${PHASE_COLOR[w.phase]}" rx="2"><title>Wk ${w.weekNum}: ${w.volume.toLocaleString()} yd (${w.phase})</title></rect>`;
+    if(showLabel){
+      bars += `<text x="${(x+barW/2).toFixed(1)}" y="${H-padB+14}" text-anchor="middle" font-size="9" fill="#8FB0BE" font-family="IBM Plex Mono, monospace">${w.weekNum}</text>`;
+    }
+  });
+
+  const gridlines = [0,0.25,0.5,0.75,1].map(f=>{
+    const y = padT + plotH - f*plotH;
+    const val = Math.round(maxVal*f);
+    return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W-padR}" y2="${y.toFixed(1)}" stroke="#204A5C" stroke-width="1" stroke-dasharray="2,3"/>
+            <text x="${padL-8}" y="${(y+3).toFixed(1)}" text-anchor="end" font-size="9" fill="#8FB0BE" font-family="IBM Plex Mono, monospace">${val.toLocaleString()}</text>`;
+  }).join('');
+
+  const svg = `
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;">
+      ${gridlines}
+      ${bars}
+      <line x1="${padL}" y1="${peakY.toFixed(1)}" x2="${W-padR}" y2="${peakY.toFixed(1)}" stroke="#C8102E" stroke-width="1.5" stroke-dasharray="5,4"/>
+      <text x="${W-padR}" y="${(peakY-5).toFixed(1)}" text-anchor="end" font-size="9" fill="#C8102E" font-family="IBM Plex Mono, monospace">peak target</text>
+    </svg>
+  `;
+  container.innerHTML = svg;
+}
+
+function renderSnapshot(){
+  const total = weeks.reduce((a,w)=>a+w.volume,0);
+  const avg = weeks.length ? Math.round(total/weeks.length) : 0;
+  let peakWeek = null;
+  weeks.forEach(w=>{ if(!peakWeek || w.volume>peakWeek.volume) peakWeek = w; });
+  const downCount = weeks.filter(w=>w.phase==='down').length;
+
+  document.getElementById('sum-total').innerHTML = total.toLocaleString()+' <small>yd</small>';
+  document.getElementById('sum-avg').innerHTML = avg.toLocaleString()+' <small>yd</small>';
+  document.getElementById('sum-peak').textContent = peakWeek ? ('Wk '+peakWeek.weekNum+' · '+peakWeek.volume.toLocaleString()+' yd') : '–';
+  document.getElementById('sum-down').textContent = downCount;
+}
+
+function renderZoneTable(){
+  const hint = document.getElementById('zone-hint');
+  const head = document.getElementById('zone-table-head');
+  const body = document.getElementById('zone-table-body');
+  const foot = document.getElementById('zone-table-foot');
+
+  if(weeks.length===0){
+    hint.textContent = 'Generate a plan to see this.';
+    head.innerHTML = ''; body.innerHTML = ''; foot.innerHTML = '';
+    return;
+  }
+
+  const profile = ZONE_PROFILES[settings.eventType] || ZONE_PROFILES.mid;
+  const basePct = blendedZonePct(settings.eventType, settings.age, settings.sex);
+  const blendEnd = settings.sex==='female' ? 15 : 16;
+  const ageNote = settings.age < blendEnd ? ` (blended toward an aerobic base for age ${settings.age}${settings.sex==='female'?', female timeline':''})` : '';
+  const downCount = weeks.filter(w=>w.phase==='down').length;
+  const raceCount = weeks.filter(w=>w.raceSpecific).length;
+  hint.textContent = `Zone split: ${profile.label}${ageNote} — ` + ZONES.map(z=> z.key+' '+(basePct[z.key]*100).toFixed(1)+'%').join(' · ') + ` The first ${REENTRY_WEEKS} weeks also start lower on volume, not just intensity mix, to account for a typical off-season break, then ramp back to the normal build curve. Edit any week's Total below — the weeks after it re-ramp smoothly back toward the same original peak, rather than carrying your edit's own change forward, and zone splits recalculate automatically. Edits are saved and hold until you hit Generate Season Plan again.` + (raceCount>0 ? ` Taper weeks shift toward a more polarized mix — less EN2, mostly into EN1, a small touch more into SP3.` : '');
+  document.getElementById('zone-legend-line').innerHTML = [
+    downCount>0 ? `<span class="sw"></span> Down week (${downCount} this season)` : '',
+    raceCount>0 ? `<span class="sw" style="background:rgba(232,163,61,0.35);border-color:var(--z-sp3);"></span> Race-specific mix (${raceCount} this season)` : '',
+  ].filter(Boolean).join(' &nbsp;&nbsp; ');
+
+  head.innerHTML = '<th>Wk</th><th>Date</th><th>Total</th>' + ZONES.map(z=>`<th>${z.key}</th>`).join('');
+
+  const totals = {}; ZONES.forEach(z=> totals[z.key]=0);
+  let grandTotal = 0;
+
+  body.innerHTML = weeks.map((w,i)=>{
+    const pct = fullZonePctForWeek(w, basePct);
+    const cells = ZONES.map(z=>{
+      const yd = Math.round(w.volume*pct[z.key]);
+      totals[z.key]+=yd;
+      return `<td>${yd.toLocaleString()}</td>`;
+    }).join('');
+    grandTotal += w.volume;
+    const rowClass = w.phase==='down' ? ' class="row-down"' : (w.raceSpecific ? ' class="row-race"' : '');
+    const raceBadgeText = w.phase==='taper' ? taperLabelFor(i).replace(/ \((Comp \d+|Main)\)/,'') : 'Race';
+    const badge = w.phase==='down' ? '<span class="down-badge">Down</span>' : (w.raceSpecific ? `<span class="race-badge">${raceBadgeText}</span>` : '');
+    return `<tr${rowClass}><td>${w.weekNum}${badge}</td><td>${fmtDate(w.date)}</td><td><input type="number" class="vol-edit" data-idx="${i}" value="${w.volume}" min="0" step="50"></td>${cells}</tr>`;
+  }).join('');
+
+  foot.innerHTML = '<td>Total</td><td></td>' + `<td>${grandTotal.toLocaleString()}</td>` + ZONES.map(z=>`<td>${totals[z.key].toLocaleString()}</td>`).join('');
+
+  body.querySelectorAll('.vol-edit').forEach(inp=>{
+    inp.addEventListener('change', (e)=>{
+      const idx = Number(e.target.dataset.idx);
+      const newVol = Math.max(0, Number(e.target.value)||0);
+      weeks[idx].volume = newVol;
+      recalcAfterPeakEdit(idx, newVol);
+      savePlan();
+      renderSnapshot();
+      renderZoneTable();
+      if(document.getElementById('chart-wrap').classList.contains('open')) renderChart();
+    });
+  });
+}
+
+/* If the edited week sits immediately before a taper block (either a secondary
+   mini-taper or the main taper), that taper's own volumes were computed from the
+   ORIGINAL peak at generation time and go stale the moment the peak week is
+   hand-edited — they'd keep reflecting a peak that no longer exists in the plan.
+   This recalculates that one adjacent block using the same depth formulas
+   suggestVolumes used, off the NEW edited value, so the taper always tracks
+   whatever the peak week actually is right now. */
+/* Editing any week scales every week AFTER it by the same ratio as the edit —
+   push a week up 20%, everything downstream shifts up 20% too, preserving the
+   season's relative shape (ramps, down weeks, tapers all keep the same proportion
+   to each other, just shifted). This generalizes and replaces the earlier
+   taper-only recalculation: scaling a peak week by ratio R scales its adjacent
+   taper (peak x some fraction) by that same ratio R automatically, since the
+   fraction itself doesn't change — so the two approaches give identical results
+   for that case, and this one additionally handles edits to any other week.
+   Guards against a zero baseline, where a ratio isn't meaningful. */
+/* Editing any week shifts every week AFTER it by the same ABSOLUTE amount as the
+   edit, not the same percentage. A percentage-based scale compounds across the
+   whole remaining season — a modest early edit ends up inflating far-downstream
+   weeks by a large absolute amount simply because they're already bigger numbers,
+   pushing total workload up far more than the original edit intended. An additive
+   shift keeps the program's own existing week-to-week increments exactly as they
+   were; it just carries the manual change forward at face value instead of
+   recalculating a growth rate. One honest trade-off: a big additive shift applied
+   uniformly can push a taper week's absolute volume higher than its intended
+   fraction-of-peak would otherwise be, since taper weeks are deliberately much
+   smaller numbers to begin with — worth a glance at the taper after a large edit. */
+/* Neither a flat ratio nor a flat absolute delta is right here — both extrapolate
+   the EDIT itself forward indefinitely, which either compounds into runaway growth
+   (ratio) or distorts already-small taper weeks (flat amount). What should actually
+   happen: the weeks after an edit re-ramp smoothly back toward the SAME original
+   target peak that was already there, using the same linear build-up shape the
+   program already generates — the target doesn't move, only the path to it from
+   the new starting point does. Down-week cuts and the plateau-before-peak logic
+   are preserved exactly as they'd be in a normal generation.
+   If the edited week IS itself the last week of its segment (the peak week), there's
+   no ramp left to re-derive within this segment — instead, the taper block that
+   follows recalculates off the new peak (same mechanism validated a few edits ago).
+   Editing a week that's already inside a taper is left as a standalone override,
+   same as any other single-week edit — no ramp exists inside a taper to re-derive. */
+function recalcAfterPeakEdit(editedIdx, newVolume){
+  if(weeks[editedIdx].phase === 'taper') return;
+
+  const phasesArr = weeks.map(w=>w.phase);
+  const segments = findBuildSegments(phasesArr);
+  const seg = segments.find(s=> editedIdx >= s.start && editedIdx < s.end);
+  if(!seg) return;
+
+  const taperBlocks = findTaperBlocks(phasesArr);
+  const nextTaper = taperBlocks.find(tb=> tb.start === seg.end);
+  const isMainSegment = nextTaper ? (nextTaper === taperBlocks[taperBlocks.length-1]) : true;
+
+  const levelKey = document.getElementById('in-level').value;
+  const level = LEVELS[levelKey] || LEVELS.elite;
+  const eventKey = document.getElementById('in-event-type').value;
+  const eventProfile = ZONE_PROFILES[eventKey] || ZONE_PROFILES.mid;
+  // This segment's own stage peak in the chain — segments[0] uses Peak 1 directly,
+  // each one after that is Peak 1 stepped up STAGE_STEP_PCT once per prior stage,
+  // exactly matching how suggestVolumes computes each competition's target.
+  const segIndex = segments.indexOf(seg);
+  const segPeak = settings.peakVolume * Math.pow(1 + STAGE_STEP_PCT/100, segIndex);
+  const downMult = 1 - (DOWN_CUT_PCT/100);
+
+  // The segment's TRUE peak week is whichever week currently holds the highest
+  // volume — not necessarily the segment's literal last index. A down week can sit
+  // right after the true peak and before the taper (its own cut always keeps it
+  // below the peak), so finding the actual maximum is more robust than assuming a
+  // fixed position.
+  let peakIdx = seg.start;
+  for(let i=seg.start+1;i<seg.end;i++){ if(weeks[i].volume > weeks[peakIdx].volume) peakIdx = i; }
+
+  // Applies the taper curve to a block off a given peak, returning the taper's own
+  // ending fraction (its low point) — used both for this taper and to correctly
+  // anchor whatever rebuild segment comes after it.
+  function applyTaperCurve(tb, peak, isMain){
+    const high = isMain ? eventProfile.taperHigh : 1-(1-eventProfile.taperHigh)*0.5;
+    const low = isMain ? eventProfile.taperLow : 1-(1-eventProfile.taperLow)*0.5;
+    const T = tb.end - tb.start;
+    for(let k=0;k<T;k++){
+      const t = T>1 ? k/(T-1) : 1;
+      const mult = T>1 ? high-(high-low)*Math.pow(t,2) : low;
+      weeks[tb.start+k].volume = round50(peak*mult);
+    }
+    return low;
+  }
+
+  if(editedIdx === peakIdx){
+    // Edited the segment's true peak week. Recalculate the adjacent taper off the
+    // new peak, THEN propagate through every subsequent stage in the chain — Comp 2
+    // and the Main event were each originally computed as this stage's peak stepped
+    // up STAGE_STEP_PCT further, so they need to shift too, not stay anchored to
+    // the season's original peak1 value as if this edit never happened.
+    if(!nextTaper) return;
+    let low = applyTaperCurve(nextTaper, newVolume, isMainSegment);
+    let curPeak = newVolume;
+    let curSegStart = nextTaper.end;
+    for(let si = segIndex+1; si < segments.length; si++){
+      curPeak = curPeak * (1 + STAGE_STEP_PCT/100);
+      const nextSeg = segments[si];
+      const segTaper = taperBlocks.find(tb=> tb.start === nextSeg.end);
+      const segIsMain = segTaper ? (segTaper === taperBlocks[taperBlocks.length-1]) : true;
+      const result = computeBuildSegmentVolumes(phasesArr, curSegStart, nextSeg.end, curPeak, 1.0, segIsMain, level, downMult, false, low);
+      Object.keys(result).forEach(idx=>{ weeks[idx].volume = result[idx]; });
+      if(segTaper){
+        low = applyTaperCurve(segTaper, curPeak, segIsMain);
+        curSegStart = segTaper.end;
+      } else {
+        curSegStart = nextSeg.end;
+      }
+    }
+    return;
+  }
+
+  if(editedIdx > peakIdx){
+    // Editing a week AFTER the true peak (e.g. a down week sitting between the peak
+    // and the taper) — there's no peak ahead to re-ramp toward, leave it as a
+    // standalone override, same as editing a taper week directly.
+    return;
+  }
+
+  // Editing before the peak — re-ramp the remaining pre-peak weeks toward the SAME
+  // unchanged peak, using the exact same computation generation uses, so edge cases
+  // (like a down week landing right on the plateau/peak position) are handled
+  // identically rather than risking a simplified reimplementation drifting from the
+  // real behavior.
+  const newFrac = segPeak > 0 ? newVolume / segPeak : 1.0;
+  const result = computeBuildSegmentVolumes(phasesArr, editedIdx+1, seg.end, segPeak, 1.0, isMainSegment, level, downMult, false, newFrac);
+  Object.keys(result).forEach(idx=>{ weeks[idx].volume = result[idx]; });
+}
+
+function renderAll(){
+  renderSnapshot();
+  renderZoneTable();
+  if(document.getElementById('chart-wrap').classList.contains('open')) renderChart();
+}
+
+/* ---------- init ---------- */
+(async function init(){
+  forceBlankAllFields();
+  await loadPlan();
+  populateFieldsFromSettings();
+  populateProfileSelect('');
+  updateYouthCaution();
+  renderAll();
+})();
+</script>
+</body>
+</html>

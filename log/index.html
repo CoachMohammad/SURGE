@@ -354,6 +354,8 @@ nav.tabs button{display:inline-flex;align-items:center;gap:6px}
         <div><strong>Resistance / power:</strong> chutes, shoots, parachutes, drag socks, socks, towers, buckets, tethers, stretch cords.</div>
         <div><strong>Zones:</strong> REC, EN1, EN2, EN3, SP1, SP2, SP3; white, pink, red, blue, purple, green; WU, warm-up, WD, CD, cool-down, easy, social (REC); aerobic, steady, smooth, drill, DPS (EN1); threshold, CSS, mile pace, think mile (EN2); VO2, 400 or 500 pace (EN3); 200 pace (SP1); 100 pace (SP2); fast, max, sprint, all out, AFAP, burst (set from the distance); bld, build, des, descend (marked Check).</div>
         <div><strong>Patterns:</strong> rounds (2x over indented lines, 3 x [note], 3x through ... by round, START SET / END SET), 100 Fr, 200 IM repeating to the set distance, 75kk/25sw, (25 kick, 75 swim), Odd = dr, Even = sw, fly/back, 6 strokes fast, first 15 fast, 9 x 50 - drill, kick, swim, 6 x 100 - 3 easy 3 fast. Rest lines like 1:00 and running totals like 1500 m 5:25 pm are skipped.</div>
+        <div><strong>Rounds:</strong> 2x { }, 2 Rnds { } and 2 rounds repeat what's inside. When rounds differ, each round gets its own part: Rnd1 PB/Pads, Rnd2 Pads; Rnd1= dr, Rnd2= sw; [Rnd1 FR, Rnd2 Prime, Rnd3 Ch]; a line that starts with Rnd2= counts in round 2 only; By Rnd, Bk, 25Fr/25Bk, Fr; Des by Rnd [Pink/Red/Blue]. On a single swim, NegSplit [Pink/Red] is split evenly across the zones.</div>
+        <div><strong>Notes:</strong> explanations in [ ] or ( ), and the workout's Notes section, are saved in the practice's Notes. A zone or color in [ ] still sets the zone, and ( ) with a set inside, like (25 kick, 75 swim), is still counted.</div>
       </div>
     </details>
   </section>
@@ -791,8 +793,88 @@ function partialFast(t,dist){
    Each block starts with its own total (and an optional clock time), "+" lines continue it, "2x { ... }" repeats,
    and "}" ends a group or the block. Block totals are used to check the reading. */
 const BLOCK_RX=/^\s*(\d{2,5})\s{2,}(?:\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)\s+)?(\S.*)$/i;
-const isSetStart=t=>/^\s*\+?\s*\d{1,3}\s*[x×]\s*(\{|\d)/i.test(t);
+const isSetStart=t=>/^\s*\+?\s*\d{1,3}\s*(?:[x×]\s*(?:rnds?|rounds?)?|rnds?|rounds?)\s*(\{|\d)/i.test(t);
 const unglue=t=>t.replace(/\bFr\s*IM\b/gi,"IM").replace(/\bmix(ed)?\b/gi,"Ch").replace(/\bCh\s*Gear\b/gi,"ChGear").replace(/\[\s*Ch\s*\]/gi,"[gear choice]").replace(/(RIMO|IMO|RIM|IM|Fr|Bk|Br|Fly)(?=(Fr|Bk|Br|Fly|IM|dr|sw|SW|kk|KK|Ch))/g,"$1 ");
+/* ---------- rounds: "2x { ... Rnd1 X, Rnd2 Y }", "[Rnd1 FR, Rnd2 Prime, Rnd3 Ch]", "By Rnd, Bk, 25Fr/25Bk, Fr", "Des by Rnd [Pink/Red/Blue]" ----------
+   Returns the text for each round (round-specific part swapped in, the rest kept), or null. */
+const RND_TOK=/\b(?:rnds?|rounds?)\s*#?\s*(\d)\s*[:=\-]?\s*/gi;
+const COLOR_W="(?:white|pink|red|blue|purple|green|gold|yellow|black|rec|en1|en2|en3|sp1|sp2|sp3)";
+const COLOR_LIST=new RegExp("^\\s*"+COLOR_W+"(?:\\s*[\\/,]\\s*"+COLOR_W+")+\\s*$","i");
+function rndSegs(s,toEnd){
+  const ms=[]; let m; RND_TOK.lastIndex=0;
+  while((m=RND_TOK.exec(s))) ms.push({k:+m[1],a:m.index,b:m.index+m[0].length});
+  if(!ms.length) return null;
+  const segs={}; let end=s.length;
+  ms.forEach((x,i)=>{
+    let stop;
+    if(i<ms.length-1) stop=ms[i+1].a;
+    else if(toEnd) stop=s.length;
+    else { const r=/--|@|[\[\](;]|,\s*(?!\d)/.exec(s.slice(x.b)); stop=r?x.b+r.index:s.length; end=stop; }
+    segs[x.k]=s.slice(x.b,stop).replace(/[\s,\/;]+$/,"").trim();
+  });
+  return {segs,prefix:s.slice(0,ms[0].a),suffix:toEnd?"":s.slice(end),max:Math.max(...ms.map(x=>x.k))};
+}
+function roundTexts(text,R){
+  const t=String(text);
+  const fill=(common,segs)=>Array.from({length:R},(_,k)=>(common.replace("\u0001"," "+(segs[k+1]||"")+" ")).replace(/\s+/g," ").trim());
+  // 1) Rnd1/Rnd2 inside [ ] or ( )
+  const br=/[\[(]([^\])]*\b(?:rnds?|rounds?)\s*#?\s*\d[^\])]*)[\])]/i.exec(t);
+  if(br){ const r=rndSegs(br[1],true); if(r&&r.max<=R) return fill(t.slice(0,br.index)+"\u0001"+t.slice(br.index+br[0].length),r.segs); }
+  // 2) Rnd1 ... Rnd2 ... in the line itself
+  const r=rndSegs(t,false);
+  if(r&&r.max<=R) return fill(r.prefix+"\u0001"+r.suffix,r.segs);
+  // 3) "By Rnd" with one item per round: "By Rnd, Bk, 25Fr/25Bk, Fr" or "Des by Rnd [Pink/ Red/ Blue]"
+  const by=/\bby\s*(?:rnds?|rounds?)\b/i.exec(t);
+  if(by&&R>1){
+    const after=t.slice(by.index+by[0].length);
+    const bx=/^\s*[\[(]([^\])]*)[\])]/.exec(after);
+    if(bx){ const items=bx[1].split(/\s*[\/,]\s*/).filter(Boolean); if(items.length===R){ const segs={}; items.forEach((x,i)=>segs[i+1]=x); return fill(t.slice(0,by.index)+"\u0001"+after.slice(bx[0].length),segs); } }
+    const cm=/^[\s,:\-]*([^@\[\]]*)/.exec(after); const items=cm?cm[1].split(/\s*,\s*/).map(x=>x.trim()).filter(Boolean):[];
+    if(items.length===R){ const segs={}; items.forEach((x,i)=>segs[i+1]=x); return fill(t.slice(0,by.index)+"\u0001"+after.slice(cm[0].length),segs); }
+  }
+  return null;
+}
+// Notes in ( ) that explain rather than describe the set are treated like [ ] notes.
+const SET_IN_PAREN=/\d+\s*[x×]\s*\d|\b\d+\s*(?:m|y|yd)?\s*(?:kick|kk|swim|sw|pull|pl|drill|dr|free|fr|back|bk|breast|br|fly|im|fast|easy)\b/i;
+function parenNotes(t){ return String(t||"").replace(/\(([^()\n]*)\)/g,(m,c)=>SET_IN_PAREN.test(c)?m:"["+c+"]"); }
+// [Pink]: a zone written as a note still sets the zone.
+const unbracketZones=t=>t.replace(/\[([^\]]*)\]/g,(m,c)=>new RegExp("^\\s*"+COLOR_W+"\\s*$","i").test(c)?" "+c+" ":m);
+// [Pink/Red] on one swim (NegSplit, Bld): the distance is split evenly across the zones, in order.
+function colorParts(t){
+  const m=/\[([^\]]*)\]/g; let b;
+  while((b=m.exec(t))){ if(!COLOR_LIST.test(b[1])) continue;
+    const cs=b[1].split(/\s*[\/,]\s*/).filter(Boolean), sd=/^\s*(\d{1,3})\s*[x×]\s*(\d{2,5})\b/.exec(t);
+    const rest=t.slice(0,b.index)+" \u0001 "+t.slice(b.index+b[0].length);
+    if(sd&&+sd[2]%cs.length===0&&+sd[2]/cs.length>=25) return cs.map(c=>rest.replace(sd[0],sd[1]+" x "+(+sd[2]/cs.length)).replace("\u0001",c));
+    return [rest.replace("\u0001",cs[0])];
+  }
+  return [t];
+}
+const ROUND_LINE=/^\s*(?:rnds?|rounds?)\s*#?\s*(\d)\s*[:=\-]?\s*/i;
+// Explanations in [ ] (and note-style ( )) plus the workout's Notes section, kept with the practice.
+function collectNotes(text){
+  const out=[], seen=new Set(), add=(x,label)=>{ x=x.replace(/\s+/g," ").trim(); const k=x.toLowerCase(), kl=(label||"").toLowerCase()+"|"+k; if(x&&!seen.has(kl)&&!(!label&&seen.has(k))){ seen.add(kl); seen.add(k); out.push((label?label+": ":"")+x); } };
+  let inNotes=false;
+  String(text||"").split(/\r?\n/).forEach(raw=>{
+    const l=raw.trim();
+    if(!l){ return; }
+    const h=/^notes?\b\s*[:\u2013\u2014\-]*\s*(.*)$/i.exec(l);
+    if(h){ inNotes=true; if(h[1]) add(h[1]); return; }
+    if(inNotes&&!isSetStart(l)&&!BLOCK_RX.test(l)){ add(l.replace(/^[*\u2022\-]\s*/,"")); return; }
+    if(/^\*\s*\S/.test(l)&&!isSetStart(l.slice(1))){ add(l.replace(/^\*\s*/,"")); return; }
+    const L=parenNotes(l.replace(BLOCK_RX,"$2")).replace(/^\+\s*/,"");
+    let m; const re=/\[([^\]]*)\]/g;
+    while((m=re.exec(L))){
+      const c=m[1].trim();
+      if(!c||/^(ch|gear choice|opt|optional|choice)$/i.test(c)||COLOR_LIST.test(c)||new RegExp("^\\s*"+COLOR_W+"\\s*$","i").test(c)||/\b(?:rnds?|rounds?)\s*#?\s*\d/i.test(c)||/^[\d\s:\/.\-]+$/.test(c)) continue;
+      const before=L.slice(0,m.index).replace(/\[[^\]]*\]/g," ").replace(/@.*$/,"");
+      const set=/(\d{1,3}\s*[x×]\s*\d{2,4}.*|\d{2,4}\s+\S.*)$/.exec(before);
+      const label=set?set[1].replace(/[\s\-–—,=]+$/,"").trim().slice(0,48):"";
+      add(c,label);
+    }
+  });
+  return out.join("\n");
+}
 function parseBlockWorkout(text){
   let lines=String(text||"").replace(/^﻿/,"").replace(/ /g," ").split(/\r?\n/);
   const startOf=l=>{ const m=BLOCK_RX.exec(l); return m&&isSetStart(m[2])?m:null; };
@@ -824,7 +906,7 @@ function parseBlockWorkout(text){
     const root={n:1,items:[]}, stack=[root];
     for(let x of st){
       let mm;
-      while((mm=/^(\d{1,2})\s*[x×]\s*\{\s*/i.exec(x))){ const g={n:+mm[1],items:[]}; stack[stack.length-1].items.push({g}); stack.push(g); x=x.slice(mm[0].length); }
+      while((mm=/^(\d{1,2})\s*(?:[x×]\s*(?:rnds?|rounds?)?|rnds?|rounds?)\s*\{\s*/i.exec(x))){ const g={n:+mm[1],items:[]}; stack[stack.length-1].items.push({g}); stack.push(g); x=x.slice(mm[0].length); }
       let closes=(x.match(/\}/g)||[]).length; x=x.replace(/\}/g," ").trim();
       if(x) stack[stack.length-1].items.push({text:x});
       while(closes-->0&&stack.length>1) stack.pop();
@@ -832,10 +914,18 @@ function parseBlockWorkout(text){
     const bs=[];
     const walk=(node,mult)=>node.items.forEach(it=>{
       if(it.g) return walk(it.g,mult*it.g.n);
-      const leaf=unglue(it.text).replace(/[←→]/g," ").replace(/\bcan be \d+\b/gi," ").replace(/\bnot (max|fast)( effort)?\b/gi," ");
-      const r=parseWorkoutCore(leaf);
-      if(!r.sets.length) skipped.push(it.text);
-      r.sets.forEach(x=>{ x.reps*=mult; x.src=it.text; bs.push(x); });
+      const leaf=unbracketZones(unglue(parenNotes(it.text))).replace(/[←→]/g," ").replace(/\bcan be \d+\b/gi," ").replace(/\bnot (max|fast)( effort)?\b/gi," ");
+      // Rounds: inside "2x { }" each round can be different (Rnd1 = ..., Rnd2 = ..., By Rnd ...).
+      const R=node.n||1; let parts=[[leaf,mult]], how="";
+      const rl=ROUND_LINE.exec(leaf);
+      if(rl&&R>1&&+rl[1]<=R){ parts=[[leaf.slice(rl[0].length),mult/R]]; how="Round "+rl[1]+" only"; }
+      else if(R>1){ const rt=roundTexts(leaf,R); if(rt){ parts=rt.map(x=>[x,mult/R]); how="Split by round"; } }
+      else { const k=(rndSegs(leaf,false)||{}).max||0, m0=/^\s*(\d{1,3})\s*[x×]\s*(\d{2,4})\b/.exec(leaf);
+        if(k>1&&m0&&+m0[1]%k===0){ const rt=roundTexts(leaf.replace(m0[0],(+m0[1]/k)+" x "+m0[2]),k); if(rt){ parts=rt.map(x=>[x,mult]); how="Split by round"; } } }
+      let any=false;
+      parts=parts.flatMap(([txt,mm])=>colorParts(txt).map(x=>[x,mm]));
+      parts.forEach(([txt,mm])=>{ const r=parseWorkoutCore(txt); if(r.sets.length) any=true; r.sets.forEach(x=>{ x.reps*=mm; x.src=it.text; if(how) x.how=how; bs.push(x); }); });
+      if(!any) skipped.push(it.text);
     });
     walk(root,1);
     const got=Math.round(bs.reduce((a,x)=>a+x.reps*x.dist,0));
@@ -849,7 +939,7 @@ function parseBlockWorkout(text){
   meta.blocks=checks; meta.duplicate=dup;
   return {sets:merged.map(({_k,...x})=>x),skipped,meta};
 }
-function parseWorkout(text){ return parseBlockWorkout(text)||parseWorkoutCore(text); }
+function parseWorkout(text){ const r=parseBlockWorkout(text)||parseWorkoutCore(parenNotes(text)); r.meta=r.meta||{}; const n=collectNotes(text); if(n) r.meta.notes=n; return r; }
 function parseWorkoutCore(text){
   const out=[], skipped=[];
   const rawLines=String(text||"").split(/\r?\n/);
@@ -1035,7 +1125,16 @@ function parseWorkoutCore(text){
       const hints=[g.byRound.length?g.byRound[r%g.byRound.length]:"",g.hint].concat(outer).filter(Boolean);
       for(const it of g.items){
         if(it.g) res.push(...expand(it.g,hints));
-        else res.push(...setsFromLine(it.line,it.L,hints.concat(it.section?[it.section]:[])));
+        else {
+          // rounds can differ: "Rnd1= ..." lines, or "Rnd1 X, Rnd2 Y" / "By Rnd" inside a line
+          let L=it.L;
+          if(g.n>1){
+            const rl=ROUND_LINE.exec(L);
+            if(rl&&+rl[1]<=g.n){ if(r!==+rl[1]-1) continue; L=L.slice(rl[0].length); }
+            else { const rt=roundTexts(L,g.n); if(rt) L=rt[r]; }
+          }
+          res.push(...setsFromLine(it.line,L,hints.concat(it.section?[it.section]:[])));
+        }
       }
     }
     return res;
@@ -1085,7 +1184,10 @@ function parseWorkoutCore(text){
       continue;
     }
     if(stack.length){ stack[stack.length-1].items.push({line,L,section}); continue; }
-    const got=setsFromLine(line,L,section?[section]:[]);
+    // "3 x 200 [Rnd1 Fr, Rnd2 Bk, Rnd3 Br]": each round is one of the repeats
+    const rk=(rndSegs(L,false)||{}).max||0, r0=/^\s*(\d{1,3})\s*[x×]\s*(\d{2,4})\b/.exec(L);
+    const rts=rk>1&&r0&&+r0[1]%rk===0?roundTexts(L.replace(r0[0],(+r0[1]/rk)+" x "+r0[2]),rk):null;
+    const got=rts?rts.flatMap(x=>setsFromLine(line,x,section?[section]:[])):setsFromLine(line,L,section?[section]:[]);
     if(got.length) out.push(...got); else skipped.push(line);
   }
   closeAll();
@@ -1165,6 +1267,9 @@ function applyRead(sets,skipped,label,meta,merged){
     const want=meta.athlete.toLowerCase(), hit=athletes.filter(a=>{const n=String(a.name||"").toLowerCase().trim(); return n===want||n.split(/\s+/)[0]===want;});
     if(hit.length===1){ form.athleteIds=[hit[0].id]; changed.push(hit[0].name); }
   }
+  let notesSet=false;
+  // the workout's notes and [ ] explanations go in Notes, unless you've written your own there
+  if(meta.notes&&(!form.notes||form.notes===form.autoNotes)){ form.notes=meta.notes; form.autoNotes=meta.notes; notesSet=true; }
   form.mode="totals"; renderForm(); saveDraft();
   const yd=sets.reduce((a,s)=>a+s.reps*s.dist,0), fl=sets.filter(s=>s.flag).length;
   const u=unitOf(form.course);
@@ -1174,7 +1279,7 @@ function applyRead(sets,skipped,label,meta,merged){
       ?' <span class="pill ok">Matches the workout total of '+fmt(meta.stated.n)+' '+esc(meta.stated.unit||u)+'</span>'
       :' <span class="pill high">Workout total says '+fmt(meta.stated.n)+' '+esc(meta.stated.unit||u)+'</span> The sets add up to '+fmt(yd)+'. Check the rounds before saving.';
   }
-  msg.innerHTML=esc(label)+": "+fmt(yd)+" "+u+"."+check+" "+(changed.length?"Set from the workout header: "+esc(changed.join(", "))+". ":"")+(fl?fl+" sets had to be guessed: open <em>How the workout was read</em> below to see which. ":"Check the boxes, then save. ")+(!merged&&sample?"Tap <strong>Check with Claude</strong> to have Claude go over this same reading line by line.":"")+(prev&&!merged?' <span class="note">This replaced the numbers that were already in the boxes.</span> <button class="btn ghost" id="read-undo-sets">Put the old numbers back</button>':"")+skippedList(skipped);
+  msg.innerHTML=esc(label)+": "+fmt(yd)+" "+u+"."+check+" "+(changed.length?"Set from the workout header: "+esc(changed.join(", "))+". ":"")+(notesSet?"Your notes from the workout are in Notes. ":"")+(fl?fl+" sets had to be guessed: open <em>How the workout was read</em> below to see which. ":"Check the boxes, then save. ")+(!merged&&sample?"Tap <strong>Check with Claude</strong> to have Claude go over this same reading line by line.":"")+(prev&&!merged?' <span class="note">This replaced the numbers that were already in the boxes.</span> <button class="btn ghost" id="read-undo-sets">Put the old numbers back</button>':"")+skippedList(skipped);
   const ub=document.getElementById("read-undo-sets"); if(ub) ub.onclick=()=>{ form.sets=prev.sets; form.totals=prev.totals; renderForm(); saveDraft(); msg.textContent="Old numbers put back."; };
 }
 function skippedList(sk){ if(!sk||!sk.length) return ""; return '<div>Couldn\'t read these lines:</div><ul class="skipped">'+sk.slice(0,8).map(l=>"<li>"+esc(l)+"</li>").join("")+"</ul>"; }

@@ -190,8 +190,14 @@ tr:last-child td{border-bottom:0}
 .empty strong{display:block;color:var(--ink);font:700 22px/1.1 var(--f-display);margin-bottom:6px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:600;z-index:20}
 .note{font-size:13px;color:var(--muted)}
-.ath-row{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1.2fr) minmax(0,.8fr) auto;gap:10px;align-items:center}
-@media (max-width:620px){.ath-row{grid-template-columns:1fr 1fr}.ath-row .nm{grid-column:1/3}}
+.ath-row{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1.1fr) minmax(0,.7fr) minmax(0,1.2fr) auto;gap:10px;align-items:center}
+@media (max-width:760px){.ath-row{grid-template-columns:1fr 1fr}.ath-row .nm,.ath-row .pl-wrap{grid-column:1/3}}
+.pl-wrap{display:grid;gap:4px}.pl-wrap .meta{font-size:12px}
+.prog{height:10px;border-radius:999px;background:var(--sunk);overflow:hidden}.prog span{display:block;height:100%;background:var(--accent);border-radius:999px}
+.pl-left{width:84px;font:700 28px/1 var(--f-display);padding:6px 8px}
+.over{color:var(--high);font-weight:600}
+.card.plan{border-color:var(--accent)}
+.banner a,.note a{color:var(--accent);font-weight:600}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 nav.tabs svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
 nav.tabs button{display:inline-flex;align-items:center;gap:6px}
@@ -1411,12 +1417,118 @@ function dbMsg(e){
   return "Couldn't save on this device just now. Try again.";
 }
 
+/* ---------- SURGE plans (same website, same device) ----------
+   SURGE publishes a summary of each saved plan under "surge-bridge-summary": week dates,
+   planned volume, week type and zone yards. Week totals sent back go in
+   "surge-bridge-actuals", and SURGE applies them with its own re-plan rules. */
+const PLAN_CUR="__current", BRIDGE_SUM="surge-bridge-summary", BRIDGE_ACT="surge-bridge-actuals";
+const SURGE_URL="../";
+const onSurgeSite=()=>/\/log\/(index\.html)?$/.test(location.pathname);
+function surgePlans(){ try{ const d=JSON.parse(localStorage.getItem(BRIDGE_SUM)||"null"); return d&&d.plans&&typeof d.plans==="object"?d.plans:{}; }catch(e){ return {}; } }
+function surgeUnshared(){ try{ return !localStorage.getItem(BRIDGE_SUM)&&(JSON.parse(localStorage.getItem("season-plan-profiles")||"[]").length>0||!!localStorage.getItem("season-plan")); }catch(e){ return false; } }
+const planLabel=k=>k===PLAN_CUR?"SURGE's open plan (not saved by name)":k;
+// The plan an athlete follows: the one picked on the Athletes tab, or a saved plan with the athlete's name.
+function planFor(a){
+  if(!a||a.plan==="none") return null;
+  const plans=surgePlans();
+  if(a.plan) return plans[a.plan]?{key:a.plan,plan:plans[a.plan],auto:false}:{key:a.plan,plan:null,missing:true};
+  const nm=String(a.name||"").trim().toLowerCase(), first=nm.split(/\s+/)[0];
+  const keys=Object.keys(plans).filter(k=>k!==PLAN_CUR);
+  const hit=keys.find(k=>k.trim().toLowerCase()===nm)||keys.find(k=>k.trim().toLowerCase()===first)||keys.find(k=>k.trim().toLowerCase().split(/\s+/)[0]===first);
+  return hit?{key:hit,plan:plans[hit],auto:true}:null;
+}
+const dayNo=s=>Math.round(parse(s).getTime()/864e5);
+// The SURGE week that overlaps most with the Monday-Sunday week on screen.
+function planWeekFor(plan,mon){
+  let best=null,bo=0; const a0=dayNo(mon),a1=a0+6;
+  (plan.weeks||[]).forEach(w=>{ if(!w||!w.date) return; const b0=dayNo(w.date),b1=b0+6,ov=Math.min(a1,b1)-Math.max(a0,b0)+1; if(ov>bo){bo=ov;best=w;} });
+  return best;
+}
+function sentQueue(){ try{ const q=JSON.parse(localStorage.getItem(BRIDGE_ACT)||"[]"); return Array.isArray(q)?q:[]; }catch(e){ return []; } }
+function sendToSurge(key,date,yards){
+  const q=sentQueue().filter(x=>!(x&&x.plan===key&&x.date===date));
+  q.push({plan:key,date,yards:Math.round(yards),sentAt:new Date().toISOString()});
+  localStorage.setItem(BRIDGE_ACT,JSON.stringify(q));
+  try{ localStorage.setItem("surge-log-sent:"+key+":"+date,String(Math.round(yards))); }catch(e){}
+}
+const leftKey=(aid,date)=>"surge-log-left:"+aid+":"+date;
+function getLeft(aid,date){ try{ const v=parseInt(localStorage.getItem(leftKey(aid,date))||"",10); return v>0?v:0; }catch(e){ return 0; } }
+function setLeft(aid,date,n){ try{ if(n>0) localStorage.setItem(leftKey(aid,date),String(n)); else localStorage.removeItem(leftKey(aid,date)); }catch(e){} }
+// SURGE's plans for backups: saved plans, the open plan and the summary.
+function surgeBackup(){
+  const out={}; try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&(k==="season-plan"||k==="season-plan-profiles"||k.indexOf("season-plan-profile:")===0||k===BRIDGE_SUM)) out[k]=localStorage.getItem(k); } }catch(e){}
+  return out;
+}
+function surgeRestore(src){
+  if(!src||typeof src!=="object") return 0;
+  let n=0;
+  try{
+    const names=new Set(JSON.parse(localStorage.getItem("season-plan-profiles")||"[]"));
+    Object.keys(src).forEach(k=>{ if(k.indexOf("season-plan-profile:")===0&&typeof src[k]==="string"){ localStorage.setItem(k,src[k]); names.add(k.slice(20)); n++; } });
+    localStorage.setItem("season-plan-profiles",JSON.stringify([...names].sort()));
+    if(src["season-plan"]&&!localStorage.getItem("season-plan")) localStorage.setItem("season-plan",src["season-plan"]);
+    if(src[BRIDGE_SUM]){ const b=JSON.parse(src[BRIDGE_SUM]), l=JSON.parse(localStorage.getItem(BRIDGE_SUM)||"null")||{version:1,plans:{}};
+      const plans=Object.assign({},l.plans||{},b.plans||{}); if(l.plans&&l.plans[PLAN_CUR]) plans[PLAN_CUR]=l.plans[PLAN_CUR];
+      localStorage.setItem(BRIDGE_SUM,JSON.stringify({version:1,updatedAt:new Date().toISOString(),plans})); }
+  }catch(e){}
+  return n;
+}
+window.addEventListener("storage",e=>{ if(e.key===BRIDGE_SUM||e.key===BRIDGE_ACT) if(tab==="week"||tab==="athletes") renderTab(); });
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible"&&(tab==="week"||tab==="athletes")) renderTab(); });
+
 /* ---------- WEEK ---------- */
 function status(actual,target,lo,hi){
   if(lo==null){const tol=Math.max(1.5,target*0.2); lo=target-tol; hi=target+tol;}
   if(actual<lo-1e-9) return '<span class="pill low">Low</span>';
   if(actual>hi+1e-9) return '<span class="pill high">High</span>';
   return '<span class="pill ok">OK</span>';
+}
+let sendArm="";
+function planCard(a,g,link,pw,w,ps,end0){
+  const left0=getLeft(a.id,pw.date), per=left0>0?left0:0;
+  const L=(planned,done)=>Math.max(0,planned-done);
+  const perCell=v=>per?'<td>'+fmt(v/per)+'</td>':'';
+  const perHead=per?'<th>Per practice</th>':'';
+  const planned=+pw.volume||0, done=w.total, left=L(planned,done), donePct=planned>0?Math.min(100,done/planned*100):0;
+  const zRows=ZONES.map(z=>{const p=+(pw.zones&&pw.zones[z])||0,d=w.zones[z],l=L(p,d);return '<tr><td><span class="zlabel"><i class="sw" style="background:'+zc(z)+'"></i>'+z+'</span></td><td>'+fmt(p)+'</td><td>'+fmt(d)+'</td><td>'+(d>p&&p>=0&&d-p>=50?'<span class="over">+'+fmt(d-p)+'</span>':fmt(l))+'</td>'+perCell(l)+'</tr>';}).join("");
+  const st=ST[g], kickT=planned*st.kick[0]/100, dr=DOL[g];
+  const tgt=[].concat(STROKES.map(s=>[s+(s==="Prime"&&a.prime?' <span class="meta">('+esc(a.prime)+')</span>':""),planned*st[s][0]/100,w.strokes[s]]),
+    [["Kick",kickT,w.kick],["Dolphin kick",kickT*(dr[0]+dr[1])/200,w.dolphin],["Pull (all pad work)",planned*st.pull[0]/100,w.pull]]);
+  const sRows=tgt.map(([n,p,d])=>{const l=L(p,d);return '<tr><td>'+n+'</td><td>'+fmt(p)+'</td><td>'+fmt(d)+'</td><td>'+(d>p&&d-p>=50?'<span class="over">+'+fmt(d-p)+'</span>':fmt(l))+'</td>'+perCell(l)+'</tr>';}).join("")
+    +(()=>{const cap=planned*ARMS[g]/100,d=w.pullArms;return '<tr><td>Arms-only pull <span class="meta">most</span></td><td>'+fmt(cap)+'</td><td>'+fmt(d)+'</td><td>'+(d>cap?'<span class="over">+'+fmt(d-cap)+'</span>':fmt(cap-d)+' <span class="meta">room</span>')+'</td>'+(per?'<td></td>':'')+'</tr>';})();
+  const head='<tr><th></th><th>Planned</th><th>Done</th><th>Left</th>'+perHead+'</tr>';
+  const sHead='<tr><th></th><th>Target</th><th>Done</th><th>Left</th>'+perHead+'</tr>';
+  const today=iso(new Date()), wkEnd=addDays(pw.date,6), over=today>wkEnd;
+  const k=link.key+"|"+pw.date, pending=sentQueue().some(x=>x&&x.plan===link.key&&x.date===pw.date);
+  let sentNote="";
+  if(pending) sentNote="Sent "+fmt(+(sentQueue().find(x=>x.plan===link.key&&x.date===pw.date).yards))+" yd. SURGE applies it the next time it opens"+(onSurgeSite()?' (<a href="'+SURGE_URL+'">open SURGE</a>)':"")+".";
+  else if(pw.actual) sentNote="SURGE has this week logged at "+fmt(pw.volume)+" yd.";
+  const sendBtn=!canWrite?"":(sendArm===k?'<button class="btn danger" id="pl-send">Send '+fmt(done)+' yd anyway</button><button class="btn ghost" id="pl-cancel">Not yet</button><span class="note">This week isn\'t over. A partial week can make SURGE mark it as a down week and re-plan the weeks after it.</span>'
+    :'<button class="btn'+(over&&!pw.actual&&!pending?" primary":"")+'" id="pl-send"'+(done>0?"":" disabled")+'>'+(pw.actual||pending?"Send again":"Send week total to SURGE")+'</button>');
+  return '<div class="card plan" style="display:grid;gap:12px">'+
+    '<div class="item-top"><h3 style="margin:0">SURGE plan: '+esc(planLabel(link.key))+'</h3><span class="meta">Week '+esc(pw.weekNum)+' · '+esc(pw.label||pw.phase||"")+' · '+esc(nice(pw.date))+' to '+esc(nice(wkEnd))+(link.auto?' · matched by name':'')+'</span></div>'+
+    '<div class="stat-row"><div class="stat"><span class="lbl">Planned</span><span class="big">'+fmt(planned)+'<small>yd</small></span></div>'+
+      '<div class="stat"><span class="lbl">Done</span><span class="big">'+fmt(done)+'<small>yd</small></span></div>'+
+      '<div class="stat"><span class="lbl">'+(done>planned?"Over plan":"Left")+'</span><span class="big">'+fmt(done>planned?done-planned:left)+'<small>yd</small></span></div>'+
+      '<div class="stat"><span class="lbl">Practices left</span><input type="number" inputmode="numeric" min="0" max="20" id="pl-left" class="pl-left" value="'+(per||"")+'" placeholder="0" aria-label="Practices left this week"></div></div>'+
+    '<div class="prog" role="img" aria-label="'+Math.round(donePct)+'% of planned volume done"><span style="width:'+donePct.toFixed(1)+'%"></span></div>'+
+    (per?'<div class="note">Per practice splits what\'s left over the '+per+' practice'+(per>1?"s":"")+' you have left.</div>':'<div class="note">Enter practices left to see what each one needs.</div>')+
+    '<div class="three">'+
+      '<div><h3>Energy zones</h3><div class="tbl-wrap"><table>'+head+zRows+'</table></div></div>'+
+      '<div><h3>Strokes, kick and pull</h3><div class="tbl-wrap"><table>'+sHead+sRows+'</table></div><div class="note">Targets are the Weekly Volume Mix for '+esc(GROUPS[g])+' applied to this week\'s planned volume.</div></div>'+
+    '</div>'+
+    '<div class="row">'+sendBtn+(sentNote?'<span class="note">'+sentNote+'</span>':(sendArm===k?'':'<span class="note">Sends the real total so SURGE can re-plan the weeks after it.</span>'))+'</div>'+
+  '</div>';
+}
+function wirePlanCard(a,link,pw,total){
+  const inp=$("#pl-left"); if(inp) inp.onchange=()=>{ setLeft(a.id,pw.date,Math.max(0,Math.min(20,parseInt(inp.value,10)||0))); renderWeek(); };
+  const k=link.key+"|"+pw.date, today=iso(new Date()), over=today>addDays(pw.date,6);
+  const b=$("#pl-send"); if(b) b.onclick=()=>{
+    if(!over&&sendArm!==k){ sendArm=k; renderWeek(); return; }
+    try{ sendToSurge(link.key,pw.date,total); sendArm=""; toast("Sent to SURGE"); }catch(e){ toast("Couldn't send. Storage may be full or blocked."); }
+    renderWeek();
+  };
+  const c=$("#pl-cancel"); if(c) c.onclick=()=>{ sendArm=""; renderWeek(); };
 }
 function renderWeek(){
   const sel=$("#wk-ath");
@@ -1426,14 +1538,26 @@ function renderWeek(){
   const body=$("#wk-body");
   if(!athletes.length){body.innerHTML='<div class="empty"><strong>No athletes yet</strong>Add an athlete, then log a practice to see the week here.</div>';return;}
   const a=athletes.find(x=>x.id===weekAth); const g=a.group in GROUPS?a.group:"distance";
-  const end=addDays(weekOf,6);
-  const ps=practices.filter(p=>Array.isArray(p.athleteIds)&&p.athleteIds.includes(a.id)&&p.date>=weekOf&&p.date<=end).sort((x,y)=>(x.date+x.session).localeCompare(y.date+y.session));
-  if(!ps.length){body.innerHTML='<div class="empty"><strong>No practices this week</strong>'+esc(a.name)+' has nothing logged for '+nice(weekOf)+' to '+nice(end)+'. Use Log practice to add one.</div>';return;}
+  const link=planFor(a), pw=link&&link.plan?planWeekFor(link.plan,weekOf):null;
+  // With a SURGE plan, the week follows SURGE's own week dates.
+  const start=pw?pw.date:weekOf, end=addDays(start,6);
+  if(pw) $("#wk-title").textContent="Week of "+nice(start);
+  const ps=practices.filter(p=>Array.isArray(p.athleteIds)&&p.athleteIds.includes(a.id)&&p.date>=start&&p.date<=end).sort((x,y)=>(x.date+x.session).localeCompare(y.date+y.session));
   const w=emptyTotals();
   ps.forEach(p=>{const f=toYd(p);w.total+=(+p.total||0)*f;w.kick+=(+p.kick||0)*f;w.pull+=(+p.pull||0)*f;w.dolphin+=(+p.dolphin||0)*f;w.pullArms+=(+p.pullArms||0)*f;w.resist+=(+p.resist||0)*f;ZONES.forEach(z=>w.zones[z]+=(+(p.zones&&p.zones[z])||0)*f);STROKES.forEach(s=>w.strokes[s]+=(+(p.strokes&&p.strokes[s])||0)*f);});
+  let planHtml="";
+  if(pw) planHtml=planCard(a,g,link,pw,w,ps);
+  else if(link&&link.missing) planHtml='<div class="banner">'+esc(a.name)+' follows the SURGE plan "'+esc(planLabel(link.key))+'", but it isn\'t on this device. '+(onSurgeSite()?'<a href="'+SURGE_URL+'">Open SURGE</a> and load it, or ':'')+'restore a backup from the device that has it.</div>';
+  else if(link&&link.plan) planHtml='<div class="banner">The SURGE plan "'+esc(planLabel(link.key))+'" has no week for '+esc(nice(weekOf))+' to '+esc(nice(addDays(weekOf,6)))+'.</div>';
+  else if(surgeUnshared()&&onSurgeSite()) planHtml='<div class="banner">Your SURGE plans aren\'t shared with the log yet. <a href="'+SURGE_URL+'">Open SURGE</a> once and they\'ll show up here.</div>';
+  if(!ps.length){
+    body.innerHTML=planHtml+'<div class="empty"><strong>No practices this week</strong>'+esc(a.name)+' has nothing logged for '+nice(start)+' to '+nice(end)+'. Use Log practice to add one.</div>';
+    if(pw) wirePlanCard(a,link,pw,w.total);
+    return;
+  }
   const anyM=ps.some(p=>unitOf(p.course)==="m");
   const zsum=sum(w.zones), ssum=sum(w.strokes);
-  const zt=ZT[g], st=ST[g];
+  const zt=pw&&pw.volume>0?ZONES.map(z=>(+(pw.zones&&pw.zones[z])||0)/pw.volume*100):ZT[g], st=ST[g];
   const zoneRows=ZONES.map((z,i)=>{const ap=pct(w.zones[z],w.total);return '<tr><td><span class="zlabel"><i class="sw" style="background:'+zc(z)+'"></i>'+z+'</span></td><td>'+fmt(w.zones[z])+'</td><td>'+p1(ap)+'%</td><td>'+p1(zt[i])+'%</td><td>'+status(ap,zt[i])+'</td></tr>';}).join("");
   const strokeRows=STROKES.map(s=>{const ap=pct(w.strokes[s],w.total),r=st[s];return '<tr><td>'+s+(s==="Prime"&&a.prime?' <span class="meta">('+esc(a.prime)+')</span>':"")+'</td><td>'+fmt(w.strokes[s])+'</td><td>'+p1(ap)+'%</td><td>'+p1(r[1])+'-'+p1(r[2])+'%</td><td>'+status(ap,r[0],r[1],r[2])+'</td></tr>';}).join("");
   const kp=[["Kick",w.kick,st.kick],["Pull (all pad work)",w.pull,st.pull]].map(([n,y,r])=>{const ap=pct(y,w.total);return '<tr><td>'+n+'</td><td>'+fmt(y)+'</td><td>'+p1(ap)+'%</td><td>'+p1(r[1])+'-'+p1(r[2])+'%</td><td>'+status(ap,r[0],r[1],r[2])+'</td></tr>';}).join("")
@@ -1442,23 +1566,24 @@ function renderWeek(){
     +'<tr><td>Resistance / power</td><td>'+fmt(w.resist)+'</td><td>'+p1(pct(w.resist,w.total))+'%</td><td>-</td><td><span class="pill none">No target</span></td></tr>';
   const head='<tr><th></th><th>Yards</th><th>Actual</th><th>Target</th><th></th></tr>';
   const gap=(part,label)=>Math.round(part)!==Math.round(w.total)?'<div class="note">'+label+' logged for '+fmt(part)+' of '+fmt(w.total)+' yd. Percentages use the full week total.</div>':"";
-  body.innerHTML=
+  body.innerHTML=planHtml+
    '<div class="card" style="display:grid;gap:12px">'+
      '<div class="stat-row"><div class="stat"><span class="lbl">Week total'+(anyM?" (meters converted)":"")+'</span><span class="big">'+fmt(w.total)+'<small>yd</small></span></div>'+
      '<div class="stat"><span class="lbl">Practices</span><span class="big">'+ps.length+'</span></div>'+
      '<div class="stat"><span class="lbl">Group</span><span class="big" style="font-size:22px">'+esc(GROUPS[g])+'</span></div></div>'+
      zoneBar(w.zones,w.total)+legend+
-     '<div class="row"><span class="note">For SURGE: enter '+fmt(w.total)+' as this week\'s actual volume.</span><button class="btn ghost" id="copy-total">Copy total</button></div>'+
+     (pw?'':'<div class="row"><span class="note">For SURGE: enter '+fmt(w.total)+' as this week\'s actual volume, or link '+esc(a.name)+' to a SURGE plan on the Athletes tab.</span><button class="btn ghost" id="copy-total">Copy total</button></div>')+
    '</div>'+
    '<div class="three">'+
      '<div class="card"><h3>Energy zones</h3><div class="tbl-wrap"><table>'+head+zoneRows+'</table></div>'+gap(zsum,"Zones")+'</div>'+
      '<div class="card"><h3>Strokes</h3><div class="tbl-wrap"><table>'+head+strokeRows+'</table></div>'+gap(ssum,"Strokes")+'</div>'+
-     '<div class="card"><h3>Kick, pull and resistance</h3><div class="tbl-wrap"><table>'+head+kp+'</table></div><div class="note">'+(anyM?"Meters are converted to yards (1 m = 1.0936 yd) so short course and long course weeks add up. ":"")+'OK means within target. Zone targets are the SURGE profile for the group, flagged when more than 20% (at least 1.5 points) away. Stroke, kick and pull use the Weekly Volume Mix ranges.</div></div>'+
+     '<div class="card"><h3>Kick, pull and resistance</h3><div class="tbl-wrap"><table>'+head+kp+'</table></div><div class="note">'+(anyM?"Meters are converted to yards (1 m = 1.0936 yd) so short course and long course weeks add up. ":"")+'OK means within target. Zone targets are '+(pw?'this week\'s SURGE plan':'the SURGE profile for the group')+', flagged when more than 20% (at least 1.5 points) away. Stroke, kick and pull use the Weekly Volume Mix ranges.</div></div>'+
    '</div>'+
    '<div class="card"><h3>Practices this week</h3><div class="list">'+ps.map(p=>'<div class="item"><div class="item-top"><span><strong>'+fmt(p.total)+' '+unitOf(p.course)+'</strong> <span class="meta">'+esc(nice(p.date))+' '+esc(p.session)+'</span></span><span class="meta">Kick '+fmt(p.kick||0)+' · Pull '+fmt(p.pull||0)+'</span></div>'+zoneBar(p.zones||{},p.total,true)+(p.notes?'<div class="meta">'+esc(p.notes)+'</div>':"")+'</div>').join("")+'</div></div>';
   const cb=$("#copy-total"); if(cb) cb.onclick=()=>copyText(String(Math.round(w.total)),"Total copied");
+  if(pw) wirePlanCard(a,link,pw,w.total);
 }
-$("#wk-ath").onchange=e=>{weekAth=e.target.value;renderWeek();};
+$("#wk-ath").onchange=e=>{weekAth=e.target.value;sendArm="";renderWeek();};
 $("#wk-prev").onclick=()=>{weekOf=addDays(weekOf,-7);renderWeek();};
 $("#wk-next").onclick=()=>{weekOf=addDays(weekOf,7);renderWeek();};
 $("#wk-today").onclick=()=>{weekOf=weekStart(iso(new Date()));renderWeek();};
@@ -1548,11 +1673,11 @@ $("#export").onclick=async()=>{
 };
 function renderBackupNote(){
   let last=""; try{ last=localStorage.getItem("surge-log-last-backup")||""; }catch(e){}
-  $("#backup-note").textContent="Your log is saved on this device only. Back up to keep a copy or to move it to your other device (Restore there). "+(last?"Last backup: "+niceLong(last)+".":"No backup yet.");
+  $("#backup-note").textContent="Your log is saved on this device only. Back up to keep a copy or to move it to your other device (Restore there). Backups include your SURGE plans, so restoring on your phone brings them along. "+(last?"Last backup: "+niceLong(last)+".":"No backup yet.");
 }
 $("#backup").onclick=async()=>{
   const data=await LocalDB.dump();
-  const body=JSON.stringify({app:"surge-practice-log",version:1,exportedAt:new Date().toISOString(),athletes:data.athletes,practices:data.practices,settings:data.settings});
+  const body=JSON.stringify({app:"surge-practice-log",version:1,exportedAt:new Date().toISOString(),athletes:data.athletes,practices:data.practices,settings:data.settings,surge:surgeBackup()});
   const ok=await saveFile("SURGE-log-backup-"+iso(new Date())+".json",new Blob([body],{type:"application/json"}));
   if(ok){ try{ localStorage.setItem("surge-log-last-backup",iso(new Date())); }catch(e){} renderBackupNote(); toast("Backup saved"); } else toast("The backup couldn't be saved here");
 };
@@ -1562,7 +1687,9 @@ $("#restore").onchange=async e=>{
     const data=JSON.parse(await f.text());
     if(!data||data.app!=="surge-practice-log") throw new Error("not a backup");
     const c=await LocalDB.restore(data);
-    toast("Restored "+c.practices+" practices, "+c.athletes+" athletes, "+c.terms+" terms");
+    const np=surgeRestore(data.surge);
+    toast("Restored "+c.practices+" practices, "+c.athletes+" athletes, "+c.terms+" terms"+(np?", "+np+" SURGE plan"+(np>1?"s":""):""));
+    renderTab();
   }catch(err){ toast("That file isn't a SURGE log backup"); }
 };
 $("#csv-copy").onclick=()=>{const t=$("#csv-text");t.select();copyText(t.value,"Table copied");};
@@ -1578,15 +1705,23 @@ $("#a-add").onclick=async()=>{
 function renderAthletes(){
   const box=$("#a-list");
   if(!athletes.length){box.innerHTML='<div class="empty"><strong>No athletes yet</strong>Add a swimmer (or a whole training group) with their event group and prime stroke.</div>';return;}
+  const plans=surgePlans(), keys=Object.keys(plans).sort((x,y)=>x===PLAN_CUR?1:y===PLAN_CUR?-1:x.localeCompare(y));
+  const planPick=a=>{ const L=planFor(a); const opts=[["","Match by name"+(a.plan?"":(L&&L.auto?" ("+L.key+")":" (none found)"))],["none","No SURGE plan"]].concat(keys.map(k=>[k,planLabel(k)]));
+    if(a.plan&&a.plan!=="none"&&!plans[a.plan]) opts.push([a.plan,a.plan+" (not on this device)"]);
+    return '<div class="pl-wrap"><select class="pl" id="apl-'+esc(a.id)+'" aria-label="SURGE plan" '+(canWrite?"":"disabled")+'>'+opts.map(([v,l])=>'<option value="'+esc(v)+'"'+(v===(a.plan||"")?" selected":"")+'>'+esc(l)+'</option>').join("")+'</select><span class="meta">SURGE plan</span></div>'; };
   box.innerHTML=athletes.map(a=>'<div class="card ath-row" data-id="'+esc(a.id)+'">'+
     '<div class="nm"><strong style="font:700 20px/1 var(--f-display)">'+esc(a.name)+'</strong><div class="meta">'+practices.filter(p=>(p.athleteIds||[]).includes(a.id)).length+' practices logged</div></div>'+
     '<select class="g" id="ag-'+esc(a.id)+'" aria-label="Group" '+(canWrite?"":"disabled")+'>'+Object.entries(GROUPS).map(([k,v])=>'<option value="'+k+'"'+(k===a.group?" selected":"")+">"+esc(v)+"</option>").join("")+'</select>'+
     '<select class="p" id="ap-'+esc(a.id)+'" aria-label="Prime stroke" '+(canWrite?"":"disabled")+'>'+["Bk","Br","Fly"].map(s=>'<option'+(s===a.prime?" selected":"")+'>'+s+'</option>').join("")+'</select>'+
+    planPick(a)+
     '<span class="actions">'+(canWrite?(confirmAth===a.id?'<button class="btn danger" data-rm="1">Remove</button><button class="btn ghost" data-keep="1">Keep</button>':'<button class="btn ghost" data-ask="1">Remove</button>'):"")+'</span></div>').join("");
+  const pn=!keys.length?(surgeUnshared()&&onSurgeSite()?'<div class="note">Your SURGE plans aren\'t shared with the log yet. <a href="'+SURGE_URL+'">Open SURGE</a> once and they\'ll show up here.</div>':'<div class="note">No SURGE plans on this device yet. '+(onSurgeSite()?'In <a href="'+SURGE_URL+'">SURGE</a>, ':'In SURGE, ')+'save a plan with the athlete\'s name and it links here automatically.</div>'):'<div class="note">Plans saved in SURGE with an athlete\'s name link automatically. Pick one here to link a different plan, such as a group plan.</div>';
+  box.insertAdjacentHTML("beforeend",pn);
   box.querySelectorAll(".ath-row").forEach(row=>{
     const id=row.dataset.id, ref=()=>db.collection("athletes").doc(id);
     row.querySelector(".g").onchange=async e=>{try{await ref().update({group:e.target.value});toast("Group updated");}catch(err){toast(dbMsg(err));}};
     row.querySelector(".p").onchange=async e=>{try{await ref().update({prime:e.target.value});toast("Prime stroke updated");}catch(err){toast(dbMsg(err));}};
+    row.querySelector(".pl").onchange=async e=>{try{await ref().update({plan:e.target.value});toast(e.target.value==="none"?"No SURGE plan for this athlete":e.target.value?"Linked to "+planLabel(e.target.value):"Matching a SURGE plan by name");}catch(err){toast(dbMsg(err));}};
     const ask=row.querySelector("[data-ask]"); if(ask) ask.onclick=()=>{confirmAth=id;renderAthletes();};
     const keep=row.querySelector("[data-keep]"); if(keep) keep.onclick=()=>{confirmAth="";renderAthletes();};
     const rm=row.querySelector("[data-rm]"); if(rm) rm.onclick=async()=>{try{await ref().delete();confirmAth="";form.athleteIds=form.athleteIds.filter(x=>x!==id);toast("Athlete removed. Their practices stay in History.");}catch(err){toast(dbMsg(err));}};

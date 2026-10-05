@@ -1,0 +1,16 @@
+{
+  "name": "SURGE Practice Log",
+  "short_name": "SURGE Log",
+  "description": "Log practices from a Commit PDF, photo or text and see yards by energy zone, stroke, kick, pull and resistance. Everything stays on your device.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F2F6F7",
+  "theme_color": "#0A6A86",
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}

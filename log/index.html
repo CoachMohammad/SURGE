@@ -663,7 +663,7 @@ $("#g-add").onclick=()=>{
    "9 x 50 - drill, kick, swim", "6 x 100 - 3 easy 3 fast", "3 x (100 IM + 2x50 back)". */
 const RX=(re,s)=>{const m=re.exec(s);return m?m.index:-1;};
 function firstOf(s,table){let best=null;for(const [re,val] of table){const i=RX(re,s);if(i>=0&&(!best||i<best.i))best={i,val};}return best;}
-const STROKE_RX=[[/\b(im|i\.m\.|imo|rim|rimo|medley|mix|mixed)\b/,"IM"],[/\b(fly|fl|butterfly|dolphin|uwdk|udk|fishtail)\b/,"Fly"],[/\b(back|bk|backstroke)\b/,"Bk"],[/\b(breast|br|brst|breaststroke)\b/,"Br"],[/\b(prime|primary|stroke|str|specialty|spec|non-?free|nf)\b/,"Prime"],[/\b(free|fr|freestyle|fs|crawl)\b/,"Fr"],[/\b(choice|ch)\b/,"choice"]];
+const STROKE_RX=[[/\b(im|i\.m\.|imo|rim|rimo|medley)\b/,"IM"],[/\b(fly|fl|butterfly|dolphin|uwdk|udk|fishtail)\b/,"Fly"],[/\b(back|bk|backstroke)\b/,"Bk"],[/\b(breast|br|brst|breaststroke)\b/,"Br"],[/\b(prime|primary|stroke|str|specialty|spec|non-?free|nf)\b/,"Prime"],[/\b(free|fr|freestyle|fs|crawl)\b/,"Fr"],[/\b(choice|ch)\b/,"choice"]];
 const TYPE_RX=[[/\b(kick|kicks|kk|kicking|underwater|uw|uwdk|udk|fishtail)\b/,"kick"],[/\b\d+\s?k\b/,"kick"],[/\b(pull|pulls|pulling|pl|pb|pads?|fpads?|ogpads?|paddles?|buoy|band|strap)\b/,"pull"],[/\b\d+\s?p\b/,"pull"],[/\b(swim|swims|sw|drill|drills|dr)\b/,"swim"],[/\b\d+\s?[sd]\b/,"swim"]];
 function strokeOf(s){
   if(!s) return null;
@@ -786,7 +786,7 @@ function partialFast(t,dist){
    and "}" ends a group or the block. Block totals are used to check the reading. */
 const BLOCK_RX=/^\s*(\d{2,5})\s{2,}(?:\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)\s+)?(\S.*)$/i;
 const isSetStart=t=>/^\s*\+?\s*\d{1,3}\s*[x×]\s*(\{|\d)/i.test(t);
-const unglue=t=>t.replace(/\bCh\s*Gear\b/gi,"ChGear").replace(/\[\s*Ch\s*\]/gi,"[gear choice]").replace(/(RIMO|IMO|RIM|IM|Fr|Bk|Br|Fly)(?=(Fr|Bk|Br|Fly|IM|dr|sw|SW|kk|KK|Ch))/g,"$1 ");
+const unglue=t=>t.replace(/\bFr\s*IM\b/gi,"IM").replace(/\bmix(ed)?\b/gi,"Ch").replace(/\bCh\s*Gear\b/gi,"ChGear").replace(/\[\s*Ch\s*\]/gi,"[gear choice]").replace(/(RIMO|IMO|RIM|IM|Fr|Bk|Br|Fly)(?=(Fr|Bk|Br|Fly|IM|dr|sw|SW|kk|KK|Ch))/g,"$1 ");
 function parseBlockWorkout(text){
   let lines=String(text||"").replace(/^﻿/,"").replace(/ /g," ").split(/\r?\n/);
   const startOf=l=>{ const m=BLOCK_RX.exec(l); return m&&isSetStart(m[2])?m:null; };

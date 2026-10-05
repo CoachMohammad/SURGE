@@ -794,6 +794,7 @@ async function savePlan(){
       }
     }catch(e){ /* best effort */ }
   }
+  bridgePublish();
 }
 
 function forceBlankAllFields(){
@@ -867,6 +868,7 @@ document.getElementById('save-profile-btn').addEventListener('click', ()=>{
     if(!names.includes(name)){ names.push(name); names.sort(); localStorage.setItem(PROFILE_INDEX_KEY, JSON.stringify(names)); }
     populateProfileSelect(name);
     statusEl.textContent = `Saved "${name}". Future edits to this plan save here automatically.`;
+    bridgePublish();
   }catch(e){
     statusEl.textContent = 'Could not save - storage may be unavailable.';
   }
@@ -914,6 +916,7 @@ document.getElementById('delete-profile-btn').addEventListener('click', (e)=>{
       localStorage.setItem(PROFILE_INDEX_KEY, JSON.stringify(names));
       populateProfileSelect('');
       statusEl.textContent = `Deleted "${name}".`;
+      bridgePublish();
     }catch(e){
       statusEl.textContent = 'Could not delete that profile.';
     }
@@ -1759,6 +1762,7 @@ async function clearAll(){
 
   try{ localStorage.removeItem(STORAGE_KEY); }catch(e){ /* nothing to delete */ }
   renderAll();
+  bridgePublish();
   document.getElementById('setup-status').textContent = 'Cleared - enter new details and generate a plan.';
 }
 
@@ -2069,6 +2073,96 @@ function renderAll(){
   if(document.getElementById('chart-wrap').classList.contains('open')) renderChart();
 }
 
+/* ---------- link with the SURGE Practice Log (/log/, same website, same device) ----------
+   Coach request (Oct 2026): the practice log shows what this week's plan calls for,
+   what has been done and what is left, and sends each week's real total back here.
+   - SURGE publishes a summary of every saved plan (week dates, planned volume, week
+     type and zone yards, computed with the same functions as the table above) under
+     BRIDGE_SUMMARY_KEY whenever plans are saved or SURGE is opened.
+   - The log leaves real weekly totals in BRIDGE_ACTUALS_KEY. SURGE applies them the
+     same way as typing a real volume into the table (marked as logged, down-week
+     check, the rest of the block re-planned), so the re-plan rules live only here. */
+const BRIDGE_SUMMARY_KEY = 'surge-bridge-summary';
+const BRIDGE_ACTUALS_KEY = 'surge-bridge-actuals';
+const BRIDGE_CURRENT = '__current';   // the plan SURGE has open that was never saved by name
+const BRIDGE_BLANK_SETTINGS = {numWeeks:0, startDate:'', peakVolume:0, peak2:0, age:0, sex:'unspecified', eventType:'', level:'', prevPeak:0, quadPosition:'', weeksToComp1:0, weeksToComp2:0, miniTaperDays:0};
+// Runs fn against a stored plan without touching the plan on screen.
+function bridgeWithPlan(data, fn){
+  const keepW = weeks, keepS = settings;
+  weeks = JSON.parse(JSON.stringify(data.weeks || []));
+  settings = Object.assign({}, BRIDGE_BLANK_SETTINGS, data.settings || {});
+  _blocksCacheKey = '';
+  try{ const result = fn(); return {result, weeks, settings}; }
+  finally{ weeks = keepW; settings = keepS; _blocksCacheKey = ''; }
+}
+function bridgePlanSummary(){
+  const basePct = blendedZonePct(settings.eventType, settings.age, settings.sex);
+  return {
+    eventType: settings.eventType || '', unit: 'yd',
+    weeks: weeks.map((w,i)=>{
+      const pct = fullZonePctForWeek(w, basePct, i), zones = {};
+      ZONES.forEach(z=>{ zones[z.key] = Math.round(w.volume*pct[z.key]); });
+      return {weekNum:w.weekNum, date:w.date, phase:w.phase, label: w.phase==='taper' ? taperLabelFor(i) : (w.phase==='down' ? 'Down' : (w.raceSpecific ? 'Race-specific' : 'Build')), volume:w.volume, actual:!!w.actual, zones};
+    })
+  };
+}
+function bridgePublish(){
+  try{
+    const plans = {};
+    loadProfileIndex().forEach(n=>{
+      try{
+        const raw = localStorage.getItem(profileStorageKey(n)); if(!raw) return;
+        const d = JSON.parse(raw); if((d.weeks||[]).length) plans[n] = bridgeWithPlan(d, bridgePlanSummary).result;
+      }catch(e){ /* skip a damaged profile */ }
+    });
+    const cur = localStorage.getItem(STORAGE_KEY);
+    if(cur){ const d = JSON.parse(cur); if((d.weeks||[]).length) plans[BRIDGE_CURRENT] = bridgeWithPlan(d, bridgePlanSummary).result; }
+    localStorage.setItem(BRIDGE_SUMMARY_KEY, JSON.stringify({version:1, updatedAt:new Date().toISOString(), plans}));
+  }catch(e){ /* best effort */ }
+}
+// Same steps as typing a real week total into the table.
+function bridgeApplyActual(date, yards){
+  const idx = weeks.findIndex(w=>w.date===date);
+  if(idx < 0) return '';
+  const v = Math.max(0, Math.round(Number(yards)||0));
+  weeks[idx].volume = v;
+  weeks[idx].actual = true;
+  const note = autoDetectDownWeek(idx, v);
+  recalcAfterPeakEdit(idx, v);
+  return `Week ${idx+1} real volume (${v.toLocaleString()}) came in from the Practice Log. ` + note;
+}
+function bridgeSync(){
+  let queue = [];
+  try{ queue = JSON.parse(localStorage.getItem(BRIDGE_ACTUALS_KEY)||'[]'); }catch(e){ queue = []; }
+  if(Array.isArray(queue) && queue.length){
+    const liveName = (document.getElementById('in-profile-name').value||'').trim();
+    let liveNote = '', reloadCurrent = false;
+    queue.forEach(q=>{
+      if(!q || !q.plan || !q.date) return;
+      try{
+        if(liveName && q.plan === liveName){ // the named plan on screen: edit it directly, then save
+          const n = bridgeApplyActual(q.date, q.yards);
+          if(n){ liveNote = n; savePlan(); }
+        } else {
+          const key = q.plan === BRIDGE_CURRENT ? STORAGE_KEY : profileStorageKey(q.plan);
+          const raw = localStorage.getItem(key); if(!raw) return; // plan was deleted
+          const r = bridgeWithPlan(JSON.parse(raw), ()=>bridgeApplyActual(q.date, q.yards));
+          if(r.result){
+            localStorage.setItem(key, JSON.stringify({settings:r.settings, weeks:r.weeks}));
+            if(q.plan === BRIDGE_CURRENT && !liveName){ reloadCurrent = true; liveNote = r.result; }
+          }
+        }
+      }catch(e){ /* skip this one */ }
+    });
+    try{ localStorage.setItem(BRIDGE_ACTUALS_KEY, '[]'); }catch(e){}
+    if(reloadCurrent){ try{ const d = JSON.parse(localStorage.getItem(STORAGE_KEY)); weeks = d.weeks || []; settings = Object.assign(settings, d.settings || {}); }catch(e){} }
+    if(liveNote){ lastEditNote = liveNote; renderAll(); }
+  }
+  bridgePublish();
+}
+// A week total sent while SURGE is already open in another tab or window.
+window.addEventListener('storage', e=>{ if(e.key === BRIDGE_ACTUALS_KEY && e.newValue && e.newValue !== '[]') bridgeSync(); });
+
 /* ---------- init ---------- */
 (async function init(){
   forceBlankAllFields();
@@ -2077,6 +2171,7 @@ function renderAll(){
   populateProfileSelect('');
   updateYouthCaution();
   renderAll();
+  bridgeSync();
 })();
 </script>
 </body>

@@ -125,6 +125,10 @@ details#sets-read summary{cursor:pointer;font-weight:600;color:var(--accent)}
 .cmp-row .rd b{color:var(--muted);font-weight:600}
 .g-row{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between}
 .g-row .term{font:700 20px/1 var(--f-display)}
+.quick-ath{width:100%;padding:10px;border:1px dashed var(--line);border-radius:10px}
+.add-chip{border-style:dashed;color:var(--accent)}
+.attn{outline:3px solid var(--low);outline-offset:4px;border-radius:10px;transition:outline-color .3s}
+.sb-total.warn{color:var(--high)}
 .skipped{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:13px}
 .set-row .rm{background:none;border:0;color:var(--muted);font-size:20px;line-height:1;cursor:pointer;border-radius:6px;height:32px}
 .zsel{display:flex;align-items:center;gap:6px;min-width:0}
@@ -515,9 +519,24 @@ const legend='<div class="legend">'+ZONES.map(z=>'<span><i class="sw" style="bac
 /* ---------- LOG: render ---------- */
 function renderAthleteChips(){
   const box=$("#f-athletes");
-  if(!athletes.length){box.innerHTML='<span class="note">No athletes yet. <button class="btn ghost" id="go-ath">Add your first athlete</button></span>';const g=$("#go-ath"); if(g) g.onclick=()=>setTab("athletes"); return;}
-  box.innerHTML=athletes.map(a=>'<button class="chip" id="chip-'+esc(a.id)+'" data-id="'+esc(a.id)+'" aria-pressed="'+(form.athleteIds.includes(a.id)?"true":"false")+'">'+esc(a.name)+'<small>'+esc(shortGroup(a.group))+'</small></button>').join("");
-  box.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{const id=b.dataset.id;const i=form.athleteIds.indexOf(id); if(i>=0) form.athleteIds.splice(i,1); else form.athleteIds.push(id); b.setAttribute("aria-pressed",i>=0?"false":"true"); saveDraft(); renderSummary();});
+  const quick='<div class="row quick-ath" id="quick-ath"'+(athletes.length?' hidden':'')+'><div class="field" style="flex:1 1 150px"><label for="qa-name">'+(athletes.length?"New athlete":"Add your first athlete")+'</label><input id="qa-name" placeholder="Name"></div><div class="field"><label for="qa-group">Group</label><select id="qa-group">'+Object.entries(GROUPS).map(([k,v])=>'<option value="'+k+'"'+(k==="distance"?" selected":"")+'>'+esc(v)+'</option>').join("")+'</select></div><button class="btn primary" id="qa-add">Add</button></div>';
+  if(!athletes.length){ box.innerHTML=quick; wireQuickAdd(); return; }
+  box.innerHTML=quick+athletes.map(a=>'<button class="chip" id="chip-'+esc(a.id)+'" data-id="'+esc(a.id)+'" aria-pressed="'+(form.athleteIds.includes(a.id)?"true":"false")+'">'+esc(a.name)+'<small>'+esc(shortGroup(a.group))+'</small></button>').join("");
+  box.insertAdjacentHTML("beforeend",'<button class="chip add-chip" id="chip-new">+ New athlete</button>');
+  $("#chip-new").onclick=()=>openQuickAdd();
+  wireQuickAdd();
+  box.querySelectorAll(".chip[data-id]").forEach(b=>b.onclick=()=>{const id=b.dataset.id;const i=form.athleteIds.indexOf(id); if(i>=0) form.athleteIds.splice(i,1); else form.athleteIds.push(id); b.setAttribute("aria-pressed",i>=0?"false":"true"); saveDraft(); renderSummary();});
+}
+function openQuickAdd(){ const q=$("#quick-ath"); if(q){ q.hidden=false; const i=$("#qa-name"); if(i) i.focus(); } }
+function wireQuickAdd(){
+  const btn=$("#qa-add"); if(!btn) return;
+  const go=async()=>{
+    const name=$("#qa-name").value.trim(); if(!name){ toast("Type the athlete's name"); $("#qa-name").focus(); return; }
+    try{ const ref=await db.collection("athletes").add({name,group:$("#qa-group").value,prime:"Bk",createdAt:new Date().toISOString()});
+      if(!form.athleteIds.includes(ref.id)) form.athleteIds.push(ref.id); saveDraft(); toast(name+" added"); renderAthleteChips(); renderSummary();
+    }catch(e){ toast(dbMsg(e)); }
+  };
+  btn.onclick=go; $("#qa-name").onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); go(); } };
 }
 const shortGroup=g=>({sprint:"Sprint",mid:"Mid",distance:"Distance"}[g]||"");
 
@@ -644,8 +663,8 @@ $("#g-add").onclick=()=>{
    "9 x 50 - drill, kick, swim", "6 x 100 - 3 easy 3 fast", "3 x (100 IM + 2x50 back)". */
 const RX=(re,s)=>{const m=re.exec(s);return m?m.index:-1;};
 function firstOf(s,table){let best=null;for(const [re,val] of table){const i=RX(re,s);if(i>=0&&(!best||i<best.i))best={i,val};}return best;}
-const STROKE_RX=[[/\b(im|i\.m\.|imo|medley)\b/,"IM"],[/\b(fly|fl|butterfly|dolphin|uwdk|udk)\b/,"Fly"],[/\b(back|bk|backstroke)\b/,"Bk"],[/\b(breast|br|brst|breaststroke)\b/,"Br"],[/\b(prime|primary|stroke|str|specialty|spec|non-?free|nf)\b/,"Prime"],[/\b(free|fr|freestyle|fs|crawl)\b/,"Fr"],[/\b(choice|ch)\b/,"choice"]];
-const TYPE_RX=[[/\b(kick|kicks|kk|kicking|underwater|uw|uwdk|udk)\b/,"kick"],[/\b\d+\s?k\b/,"kick"],[/\b(pull|pulls|pulling|pl|pads?|paddles?|buoy|band|strap)\b/,"pull"],[/\b\d+\s?p\b/,"pull"],[/\b(swim|swims|sw|drill|drills|dr)\b/,"swim"],[/\b\d+\s?[sd]\b/,"swim"]];
+const STROKE_RX=[[/\b(im|i\.m\.|imo|rim|rimo|medley)\b/,"IM"],[/\b(fly|fl|butterfly|dolphin|uwdk|udk|fishtail)\b/,"Fly"],[/\b(back|bk|backstroke)\b/,"Bk"],[/\b(breast|br|brst|breaststroke)\b/,"Br"],[/\b(prime|primary|stroke|str|specialty|spec|non-?free|nf)\b/,"Prime"],[/\b(free|fr|freestyle|fs|crawl)\b/,"Fr"],[/\b(choice|ch)\b/,"choice"]];
+const TYPE_RX=[[/\b(kick|kicks|kk|kicking|underwater|uw|uwdk|udk|fishtail)\b/,"kick"],[/\b\d+\s?k\b/,"kick"],[/\b(pull|pulls|pulling|pl|pb|pads?|fpads?|ogpads?|paddles?|buoy|band|strap)\b/,"pull"],[/\b\d+\s?p\b/,"pull"],[/\b(swim|swims|sw|drill|drills|dr)\b/,"swim"],[/\b\d+\s?[sd]\b/,"swim"]];
 function strokeOf(s){
   if(!s) return null;
   const hits=STROKE_RX.filter(([re])=>re.test(s));
@@ -662,8 +681,8 @@ function typeOf(s){
   const k=TYPE_RX.some(([re,v])=>v==="kick"&&re.test(s)), p=TYPE_RX.some(([re,v])=>v==="pull"&&re.test(s));
   return {v:b.val,flag:k&&p?"Kick and pull in one line, counted as "+b.val:""};
 }
-const RESIST_RX=/\b(resgear|chutes?|shoots?|parachutes?|drag[\s-]?socks?|socks?|power[\s-]?towers?|towers?|buckets?|tethers?|tethered|stretch[\s-]?cords?|cords|resisted|resistance|drag[\s-]?suits?|power[\s-]?rack|bungees?)\b/;
-const FAST_RX=/\b(fast|max|sprint|sprints|all[\s-]?out|afap|race[\s-]?pace|rp|dive|dives|power|chutes?|shoots?|parachutes?|socks?|resisted|resistance|towers?|buckets?|tethers?|tethered|speed|hard|burst|bursts)\b/;
+const RESIST_RX=/\b(resgear|chutes?|shoots?|parachutes?|drag[\s-]?socks?|socks?|sox|power[\s-]?towers?|towers?|buckets?|tethers?|tethered|stretch[\s-]?cords?|cords|resisted|resistance|drag[\s-]?suits?|power[\s-]?rack|bungees?)\b/;
+const FAST_RX=/\b(fast|faster|max|max effort|best effort|sprint|sprints|all[\s-]?out|afap|race[\s-]?pace|rp|dive|dives|power|chutes?|shoots?|parachutes?|socks?|sox|resisted|resistance|towers?|buckets?|tethers?|tethered|speed|hard|burst|bursts)\b/;
 function zoneOf(s,dist){
   if(!s) return null;
   let m=/\b(en|sp)\s*-?\s*([1-3])\b/.exec(s); if(m) return {v:(m[1]+m[2]).toUpperCase()};
@@ -673,17 +692,17 @@ function zoneOf(s,dist){
   if(/\b(red|blue)\b/.test(s)) return {v:"EN2"};
   if(/\bpurple\b/.test(s)) return {v:"EN3"};
   if(/\bgreen\b/.test(s)) return {v:"SP2"};
-  if(/\b(threshold|thresh|css|t[\s-]?pace|mile|1650|1500 pace|1000 pace|800 pace)\b/.test(s)) return {v:"EN2"};
+  if(/\b(threshold|thresh|css|t[\s-]?pace|mile|1650|1500 pace|1000 pace|800 pace|negsplit|neg split|negative split|strong|make it|tempo|high tempo)\b/.test(s)) return {v:"EN2"};
   if(/\b(vo2|vo2max|vo2 max|400 pace|500 pace)\b/.test(s)) return {v:"EN3"};
   if(/\b(200 pace|broken 200|lactate tolerance|tolerance)\b/.test(s)) return {v:"SP1"};
   if(/\b(100 pace|50 pace|broken 100|lactate production)\b/.test(s)) return {v:"SP2"};
-  if(/\b(warm[\s-]?up|warmup|wu|w\/u|cool[\s-]?down|cooldown|warm[\s-]?down|wd|cd|c\/d|easy|ez|loose|loosen|flush|social|recover)\b/.test(s)) return {v:"REC"};
+  if(/\b(warm[\s-]?up|warmup|wu|w\/u|cool[\s-]?down|cooldown|warm[\s-]?down|wd|cd|c\/d|easy|ez|loose|loosen|flush|flushout|social|recover|smooth)\b/.test(s)) return {v:"REC"};
   if(FAST_RX.test(s)){
     const d=dist||100;
     return {v:d<=25?"SP3":d<=50?"SP2":d<=150?"SP1":d<=300?"EN3":"EN2",flag:"Fast or hard set, zone set from the distance"};
   }
-  if(/\b(desc|des|descend|descending|negative split|neg split|build|bld)\b/.test(s)) return {v:null,flag:"Descend or build set, check the zone"};
-  if(/\b(aerobic|steady|moderate|base|smooth|drill|drills|dr|technique|dps|hypoxic)\b/.test(s)) return {v:"EN1"};
+  if(/\b(desc|des|descend|descending|build|bld)\b/.test(s)) return {v:null,flag:"Descend or build set, check the zone"};
+  if(/\b(aerobic|steady|moderate|mod|base|drill|drills|dr|technique|dps|fcu|scull|sculling|act|sa|ld|sd|otf|hypoxic|be\d|get ready|usual pattern|long|hold length)\b/.test(s)) return {v:"EN1"};
   return null;
 }
 function cleanNums(s){
@@ -699,11 +718,11 @@ function cleanNums(s){
 function repsDist(s){
   const c=cleanNums(s);
   let m=/(\d+)\s*[x×*]\s*(\d+)\s*(?:'?s\b|[kpd]\b|yds?\b|m\b)?/.exec(c);
-  if(m){let a=+m[1],b=+m[2]; if(a>b&&b<=20&&a>=25){const t=a;a=b;b=t;} if(b>=25&&b%25===0&&a>=1&&a<=200) return {reps:a,dist:b,tail:c.slice(m.index+m[0].length)};}
+  if(m){let a=+m[1],b=+m[2]; if(a>b&&b<=20&&a>=25){const t=a;a=b;b=t;} if(b>=25&&b%25===0&&a>=1&&a<=200) return {reps:a,dist:b,tail:c.slice(m.index+m[0].length),pre:c.slice(0,m.index)};}
   const re=/\b(\d{2,5})\s*(?:'?s\b|[kpd]\b|yds?\b|yards?\b|m\b)?/g; let mm;
   while((mm=re.exec(c))){
     const d=+mm[1];
-    if(d>=25&&d%25===0&&d<=10000){const tail=c.slice(mm.index+mm[0].length); const r=/^\s*x\s*(\d{1,2})\b/.exec(tail); return {reps:r?+r[1]:1,dist:d,tail:r?tail.slice(r[0].length):tail};}
+    if(d>=25&&d%25===0&&d<=10000){const tail=c.slice(mm.index+mm[0].length); const r=/^\s*x\s*(\d{1,2})\b/.exec(tail); return {reps:r?+r[1]:1,dist:d,tail:r?tail.slice(r[0].length):tail,pre:c.slice(0,mm.index)};}
   }
   return null;
 }
@@ -750,15 +769,82 @@ function partialFast(t,dist){
     if(d>=dist) return null;
     return {d,est:true,what:n+" "+(/cycle/.test(unit)?"cycles":"strokes"),fastText:"fast",rest:t.replace(m[0]," ")};
   }
-  m=new RegExp("\\b(first|1st|last|final|middle)\\s+(\\d{1,3}(?:\\.\\d)?)\\s*(?:m|y|yd|yds|yards|meters)?\\s+"+FASTW+"\\b").exec(t)
+  m=/\b(?:1st|first)\s*(?:&|and)\s*last\s+(\d{1,3})s?\s*(?:m|y)?\s*(?:fast|max|sprint)\b/.exec(t);
+  if(m){ const d=2*(+m[1]); if(d>0&&d<dist) return {d,est:false,what:"first and last "+m[1],fastText:"fast",rest:t.replace(m[0]," ")}; }
+  m=new RegExp("\\b(first|1st|last|final|middle|mid)\\s+(\\d{1,3}(?:\\.\\d)?)\\s*(?:m|y|yd|yds|yards|meters)?\\s+"+FASTW+"\\b").exec(t)
     ||new RegExp("\\b"+FASTW+"\\s+(?:the\\s+)?(first|1st|last|final|middle)\\s+(\\d{1,3}(?:\\.\\d)?)\\b").exec(t);
   if(m){
     const d=Math.round(+m[2]); if(!(d>0&&d<dist)) return null;
     return {d,est:false,what:m[1].replace("1st","first")+" "+d,fastText:"fast",rest:t.replace(m[0]," ")};
   }
+  m=new RegExp("(?:^|[\\s,=])(\\d{1,3})\\s*(?:m|y|yd)?\\s+"+FASTW+"\\b").exec(t)||new RegExp("(?:^|[\\s,=])(\\d{1,3})(?:m|y)?"+FASTW+"\\b").exec(t);
+  if(m){ const d=+m[1]; if(d>=5&&d<dist) return {d,est:false,what:"first "+d,fastText:"fast",rest:t.replace(m[0]," ")}; }
   return null;
 }
-function parseWorkout(text){
+/* ---------- coach's block format: "1500   05:00:00 PM   4 x 150 Fr to Bk @2:00 / + 6 x 100 ... }" ----------
+   Each block starts with its own total (and an optional clock time), "+" lines continue it, "2x { ... }" repeats,
+   and "}" ends a group or the block. Block totals are used to check the reading. */
+const BLOCK_RX=/^\s*(\d{2,5})\s{2,}(?:\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)\s+)?(\S.*)$/i;
+const isSetStart=t=>/^\s*\+?\s*\d{1,3}\s*[x×]\s*(\{|\d)/i.test(t);
+const unglue=t=>t.replace(/\bFr\s*IM\b/gi,"IM").replace(/\bmix(ed)?\b/gi,"Ch").replace(/\bCh\s*Gear\b/gi,"ChGear").replace(/\[\s*Ch\s*\]/gi,"[gear choice]").replace(/(RIMO|IMO|RIM|IM|Fr|Bk|Br|Fly)(?=(Fr|Bk|Br|Fly|IM|dr|sw|SW|kk|KK|Ch))/g,"$1 ");
+function parseBlockWorkout(text){
+  let lines=String(text||"").replace(/^﻿/,"").replace(/ /g," ").split(/\r?\n/);
+  const startOf=l=>{ const m=BLOCK_RX.exec(l); return m&&isSetStart(m[2])?m:null; };
+  const starts=[]; lines.forEach((l,i)=>{ if(startOf(l)) starts.push(i); });
+  if(starts.length<2) return null;
+  // the same workout pasted twice: keep one copy
+  let dup=false;
+  const first=lines[starts[0]].trim(), j=starts.find(i=>i>starts[0]&&lines[i].trim()===first);
+  if(j!==undefined){ const a=starts.filter(i=>i<j).map(i=>lines[i].trim()), b=starts.filter(i=>i>=j).map(i=>lines[i].trim()); if(a.length&&a.every((x,k)=>x===b[k])){ lines=lines.slice(0,j); dup=true; } }
+  const meta=workoutMeta(lines.slice(0,starts[0]).join("\n"));
+  delete meta.stated;
+  for(const l of lines.slice(0,starts[0])){
+    const t=/^\s*([A-Za-z][A-Za-z.' -]{0,30}?)\s+(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})\s*(AM|PM)?\b/i.exec(l);
+    if(t){ const y=t[4].length===2?2000+(+t[4]):+t[4]; const d=new Date(y,+t[2]-1,+t[3]); if(!isNaN(d)) meta.date=iso(d); if(t[5]) meta.session=t[5].toUpperCase(); meta.athlete=t[1].trim(); }
+  }
+  const blocks=[]; let cur=null;
+  for(const raw of lines){
+    const m=startOf(raw);
+    if(m){ cur={total:+m[1],raw:[m[2].trim()]}; blocks.push(cur); continue; }
+    if(!cur) continue;
+    const t=raw.trim();
+    if(!t||/^[_\-=*]{3,}$/.test(t)||/^notes\b/i.test(t)||/^\*/.test(t)||/=\s*\d+\s*days$/i.test(t)||/^["“]/.test(t)) continue;
+    cur.raw.push(t);
+  }
+  const sets=[], skipped=[], checks=[];
+  blocks.forEach((b,bi)=>{
+    const st=[];
+    b.raw.forEach((t,i)=>{ if(i===0||/^\+/.test(t)||isSetStart(t)) st.push(t.replace(/^\+\s*/,"")); else if(st.length) st[st.length-1]+=" "+t; });
+    const root={n:1,items:[]}, stack=[root];
+    for(let x of st){
+      let mm;
+      while((mm=/^(\d{1,2})\s*[x×]\s*\{\s*/i.exec(x))){ const g={n:+mm[1],items:[]}; stack[stack.length-1].items.push({g}); stack.push(g); x=x.slice(mm[0].length); }
+      let closes=(x.match(/\}/g)||[]).length; x=x.replace(/\}/g," ").trim();
+      if(x) stack[stack.length-1].items.push({text:x});
+      while(closes-->0&&stack.length>1) stack.pop();
+    }
+    const bs=[];
+    const walk=(node,mult)=>node.items.forEach(it=>{
+      if(it.g) return walk(it.g,mult*it.g.n);
+      const leaf=unglue(it.text).replace(/[←→]/g," ").replace(/\bcan be \d+\b/gi," ").replace(/\bnot (max|fast)( effort)?\b/gi," ");
+      const r=parseWorkoutCore(leaf);
+      if(!r.sets.length) skipped.push(it.text);
+      r.sets.forEach(x=>{ x.reps*=mult; x.src=it.text; bs.push(x); });
+    });
+    walk(root,1);
+    const got=Math.round(bs.reduce((a,x)=>a+x.reps*x.dist,0));
+    checks.push({n:bi+1,stated:b.total,got});
+    if(got!==b.total) bs.forEach(x=>{ x.flag=(x.flag?x.flag+". ":"")+"Block "+(bi+1)+" reads as "+fmt(got)+" but the workout says "+fmt(b.total); });
+    sets.push(...bs);
+  });
+  const merged=[];
+  for(const x of sets){ const k=[x.src,x.dist,x.stroke,x.type,x.zone,x.flag,x.dolphin,x.armsOnly,x.resist].join("|"); const p=merged.find(m=>m._k===k); if(p) p.reps+=x.reps; else merged.push(Object.assign({_k:k},x)); }
+  meta.stated={n:blocks.reduce((a,b)=>a+b.total,0),unit:""};
+  meta.blocks=checks; meta.duplicate=dup;
+  return {sets:merged.map(({_k,...x})=>x),skipped,meta};
+}
+function parseWorkout(text){ return parseBlockWorkout(text)||parseWorkoutCore(text); }
+function parseWorkoutCore(text){
   const out=[], skipped=[];
   const rawLines=String(text||"").split(/\r?\n/);
   const indentOf=r=>{const m=/^[\s ]*/.exec(r)[0]; let n=0; for(const ch of m) n+=ch==="\t"?4:1; return n;};
@@ -781,7 +867,7 @@ function parseWorkout(text){
       if(!z){ z={v:"EN1"}; if(!flags.length) flags.push("No zone given, set to EN1"); }
       if(note){ for(let i=flags.length-1;i>=0;i--) if(/^Fast or hard set/.test(flags[i])) flags.splice(i,1); flags.unshift(note); }
       const ctx=[seg].concat(hs).join(" ");
-      const dolphin=ty.v==="kick"&&(st.v==="Fly"||/\b(dolphin|dol|dk|uwdk|udk|underwater|uw|fly kick|streamline kick)\b/.test(ctx));
+      const dolphin=ty.v==="kick"&&(st.v==="Fly"||/\b(dolphin|dol|dk|uwdk|udk|underwater|uw|fly kick|fly kk|fishtail|streamline kick)\b/.test(ctx));
       const armsOnly=ty.v==="pull"&&!/\bfins?\b/.test(ctx)&&/\b(pull|pulls|pulling|pl|buoy|band|strap|pb)\b|\b\d+\s?p\b/.test(ctx);
       const resist=RESIST_RX.test(ctx);
       res.push({reps,dist,stroke:st.v,type:ty.v,zone:z.v,flag:[...new Set(flags)].join(". "),src,dolphin,armsOnly,resist});
@@ -799,10 +885,127 @@ function parseWorkout(text){
       const ps=body.split(/\s*(?:,|;|\+|\bthen\b)\s*/).filter(x=>x.trim());
       if(ps.length>1&&ps.every(hasDistance)){ const d=ps.map(p=>{const r=repsDist(p);return r.reps*r.dist;}); if(d[0]<d.slice(1).reduce((a,b)=>a+b,0)) pieces=ps; }
     }
+    const STROKE_WORDS=/\b(rimo|rim|imo|im|i\.m\.|medley|fly|fl|butterfly|back|bk|backstroke|breast|br|brst|breaststroke|free|fr|freestyle|fs)\b/g;
+    const W={Fr:"free",Bk:"back",Br:"breast",Fly:"fly",IM:"im",Prime:"prime"};
+    // read one piece of a set; it can split itself and read each part again
+    const handle=(full,reps,dist,depth,note)=>{
+      const tail=(()=>{ const r=repsDist(full); return r&&r.dist===dist?((r.pre||"")+" "+r.tail):cleanNums(full); })();
+      if(depth<4){
+        // "6x100 Odd = drill, Even = swim"
+        const oe=/\bodds?\s*[=:\-]?\s*(.+?)\s*[,;]?\s*\bevens?\s*[=:\-]?\s*(.+)$/.exec(full);
+        if(oe&&reps>=2){
+          const rest=full.replace(oe[0]," "), n1=Math.ceil(reps/2);
+          handle(rest+" "+oe[1],n1,dist,depth+1,note); handle(rest+" "+oe[2],reps-n1,dist,depth+1,note);
+          return;
+        }
+        // counts that add up to the reps: "3Mod + 1Fast", "1Fast, 1Mod", "8Fr/8Ch", "1x Bld, 1xNegSplit, 1xFast"
+        const cnt=[...full.matchAll(/(?:^|[\s,+\/-])([1-9]\d?)\s*x?\s*([a-z][a-z]*(?:\s+(?:fast|mod|smooth|strong|easy|bld|build))?)(?=$|[\s,+\/@])/g)]
+          .map(m=>({n:+m[1],w:m[2],raw:m[0]})).filter(c=>c.n<=reps&&c.n<15&&!/^(x|st|nd|rd|th|m|y|yd|s)$/.test(c.w)&&(zoneOf(c.w,dist)||strokeOf(c.w)||typeOf(c.w)||/^(fast|mod|smooth|strong|bld|build|negsplit)/.test(c.w)));
+        const csum=cnt.reduce((a,b)=>a+b.n,0);
+        if(cnt.length>1&&csum>0&&reps>1&&reps%csum===0){
+          const k=reps/csum; let rest=full; cnt.forEach(c=>{ rest=rest.replace(c.raw," "); });
+          const calm=rest.replace(/\b(fast|faster|max hr|max effort|best effort|max|sprint|all out|afap|burst)\b/g," ");
+          cnt.forEach(c=>handle(c.w+" "+(FAST_RX.test(c.w)?rest:calm),c.n*k,dist,depth+1,note));
+          return;
+        }
+        // a list after "--" that rotates through the reps: "Scull/Act, Act/DPS, Long&Strong", "50Fast/100Fast/150Fast/EZ/Fast"
+        const desc=/--\s*(.+)$/.exec(full);
+        if(desc&&reps>1){
+          const body=desc[1].replace(/@.*$/,"").replace(/\[[^\]]*\]/g," ").trim();
+          for(const sep of [/\s*,\s*/,/\s*\/\s*/]){
+            const parts=body.split(sep).map(x=>x.trim()).filter(Boolean);
+            if(parts.length>1&&parts.length<=reps&&reps%parts.length===0&&parts.every(x=>x.split(/\s+/).length<=3)){
+              const zoned=parts.filter(x=>{ const z=zoneOf(x,dist); return (z&&(z.v||z.flag))||/\d+\s*(fast|max)/.test(x); });
+              const kinds=new Set(parts.map(x=>{ const z=zoneOf(x,dist); return z?(z.v||"des"):"none"; }));
+              if(zoned.length>=2&&kinds.size>=2){
+                const rest=full.replace(desc[1]," ");
+                const named=parts.map(x=>{ const m2=/\b(fly|fl|butterfly|back|bk|breast|br|free|fr|im|imo|rim)\b/.exec(x); return m2?m2[1]:""; });
+                const carry=named.find(Boolean)||"";
+                parts.forEach((x,i)=>handle(rest+" -- "+(named[i]?"":carry+" ")+x,reps/parts.length,dist,depth+1,note));
+                return;
+              }
+            }
+          }
+        }
+        // "Ev 4th Fast": every 4th rep fast
+        const ev=/\bev(?:ery)?\s*(\d)(?:st|nd|rd|th)\s+(fast|max|sprint|strong)\b/.exec(full);
+        if(ev&&reps>=+ev[1]){
+          const nf=Math.floor(reps/+ev[1]), rest=full.replace(ev[0]," ");
+          handle(ev[2]+" "+rest,nf,dist,depth+1,note); if(reps-nf>0) handle(rest,reps-nf,dist,depth+1,"Every "+ev[1]+" fast; the others are counted in their own zone");
+          return;
+        }
+      }
+      // a ladder of fast pieces across the reps: "25/50/75/100 Fast", "15/25 Fast"
+      const lad=/\b(\d{1,3}(?:\s*\/\s*\d{1,3})+)\s*(?:m|y|s)?\s*(fast|max|sprint)\b/.exec(full);
+      if(lad){
+        const L=lad[1].split("/").map(x=>+x.trim()).filter(x=>x>0&&x<dist);
+        if(L.length>1){
+          const totalFast=Math.round(L.reduce((a,b)=>a+b,0)*reps/L.length), all=reps*dist;
+          if(totalFast<all){
+            const rest=full.replace(lad[0]," ");
+            make(rest,1,all-totalFast,[],line,"Only part of each rep is fast ("+lad[1]+"), so the rest is counted in its own zone",true);
+            make("fast "+rest.replace(/\b(smooth|easy|ez|mod|moderate|bld|build|des|descend|wd)\b/g," "),1,totalFast,[],line,lad[1]+" fast, counted as speed");
+            return;
+          }
+        }
+      }
+      // breakdown inside each rep, repeated in order until the distance is used up:
+      // "1000 100 Fr, 200 IM" = 400 Fr + 600 IM; "600 sw 200fr, 100bk" = 400 Fr + 200 Bk; "100 75kk/25sw burst"
+      let items=depth<9?scanItems(tail):[];
+      let S=items.reduce((a,b)=>a+b.d,0);
+      if(items.length>2&&S>dist){
+        for(let a=0;a<items.length-2&&S>dist;a++){
+          let run=0;
+          for(let b=a+1;b<items.length;b++){ run+=items[b].d; if(run===items[a].d){ const drop=items.slice(a+1,b+1); items[a]={d:items[a].d,i:items[a].i,words:items[a].words+" "+drop.map(x=>x.words).join(" ")}; items=items.slice(0,a+1).concat(items.slice(b+1)); S=items.reduce((x,y)=>x+y.d,0); break; } if(run>items[a].d) break; }
+        }
+      }
+      if(items.length>1&&S>0&&S<=dist){
+        const per=items.map(()=>0); let left=dist, i=0, guard=0;
+        while(left>0&&guard++<2000){ const d=Math.min(items[i].d,left); per[i]+=d; left-=d; i=(i+1)%items.length; }
+        const prefix=tail.slice(0,items[0].i);
+        const cycleNote=dist%S===0?"":"The pattern repeats in order until the "+dist+" is done";
+        items.forEach((it,k)=>{ if(per[k]>0) handle(it.words+" "+prefix,reps,per[k],9,cycleNote||note); });
+        return;
+      }
+      // "4x50 IMO smooth/Fast", "Pink/Red": alternate zones through the reps
+      let alt=null; const pr=/\b([a-z]+)\s*\/\s*([a-z]+)\b/g; let pm;
+      while((pm=pr.exec(full))){ const a=zoneOf(pm[1],dist), b=zoneOf(pm[2],dist); if(a&&b&&a.v&&b.v&&a.v!==b.v){alt=pm;break;} }
+      if(alt&&reps>=2&&depth<6){
+        const n1=Math.ceil(reps/2);
+        handle(full.replace(alt[0],alt[1]),n1,dist,depth+1,note);
+        handle(full.replace(alt[0],alt[2]),reps-n1,dist,depth+1,note);
+        return;
+      }
+      // only part of each rep is fast: "6 strokes fast", "first 15 fast", "15M Fast", "Mid 25 Fast", "1st&Last 25 Fast"
+      const pf=partialFast(full,dist);
+      if(pf){
+        make(pf.rest,reps,dist-pf.d,[],line,"Only "+pf.what+" fast, so the rest of each "+dist+" is counted in its own zone",true);
+        make("fast "+pf.rest.replace(/\b(smooth|easy|ez|mod|moderate|bld|build|des|descend|wd)\b/g," "),reps,pf.d,[],line,pf.what+" fast"+(pf.est?" (about 1.1 per stroke)":"")+", counted as speed");
+        return;
+      }
+      // strokes in a row with no distances: "Fr to Bk", "BkFrBk", "fly/back", "Fr or Bk": split by how often each appears
+      const seq=[]; { let sm; STROKE_WORDS.lastIndex=0; while((sm=STROKE_WORDS.exec(full))){ const v=/^r?im/.test(sm[1])?"IM":(strokeOf(sm[1])||{}).v; if(v) seq.push(v); } }
+      const kinds=[...new Set(seq)];
+      if(kinds.length>1&&depth<8){
+        const rest=full.replace(STROKE_WORDS," ");
+        const counts=kinds.map(v=>seq.filter(x=>x===v).length), tot=counts.reduce((a,b)=>a+b,0);
+        const n2="Split "+kinds.map((v,i)=>v+(counts[i]>1?" x"+counts[i]:"")).join(" / ")+" by how often each appears";
+        let used=0;
+        kinds.forEach((v,i)=>{ const d=i===kinds.length-1?reps*dist-used:Math.round(reps*dist*counts[i]/tot); used+=d; if(d>0) handle(W[v]+" "+rest,1,d,9,n2); });
+        return;
+      }
+      // kick with swim or drill and no distances: "kk/dr", "6x100 kick/swim by 50"
+      if(/\b(kick|kk)\b/.test(full)&&/\b(swim|sw|dr|drill)\b/.test(full)&&!/\b(pull|pads?|paddles?|buoy|pb)\b/.test(full)&&depth<9){
+        const n1=Math.round(dist/2);
+        make(full.replace(/\b(swim|sw|dr|drill)\b/g," "),reps,n1,[],line,"Kick and swim split half and half");
+        make(full.replace(/\b(kick|kk)\b/g," "),reps,dist-n1,[],line,"Kick and swim split half and half");
+        return;
+      }
+      make(full,reps,dist,[],line,note);
+    };
     for(const seg of pieces){
       const rd=repsDist(seg); if(!rd) continue;
       const full=(seg+" "+paren).trim();
-      const tail=((rd.tail||"")+" "+cleanNums(paren)).trim();
       const dashTail=/^\s*[-:]\s*(.+)$/.exec(rd.tail||"");
       if(dashTail){
         const t=dashTail[1];
@@ -816,60 +1019,7 @@ function parseWorkout(text){
           continue;
         }
       }
-      // "6x100 Odd = drill, Even = swim"
-      const oe=/\bodds?\s*[=:\-]?\s*([a-z][a-z \/]*?)\s*[,;]\s*evens?\s*[=:\-]?\s*([a-z][a-z \/]*)/.exec(full);
-      if(oe&&rd.reps>=2){
-        const rest=full.replace(oe[0]," "), n1=Math.ceil(rd.reps/2);
-        make(oe[1]+" "+rest,n1,rd.dist,[],line); make(oe[2]+" "+rest,rd.reps-n1,rd.dist,[],line);
-        continue;
-      }
-      // breakdown inside each rep, repeated in order until the distance is used up:
-      // "1000 100 Fr, 200 IM" = 100 Fr, 200 IM, 100 Fr, 200 IM, 100 Fr, 200 IM, 100 Fr = 400 Fr + 600 IM
-      // "600 sw 200fr, 100bk" = 400 Fr + 200 Bk; "100 75kk/25sw burst"; "4 x 100 (25 kick, 75 swim)"
-      const items=scanItems(tail);
-      const S=items.reduce((a,b)=>a+b.d,0);
-      if(items.length>1&&S>0&&S<=rd.dist){
-        const per=items.map(()=>0); let left=rd.dist, i=0, guard=0;
-        while(left>0&&guard++<2000){ const d=Math.min(items[i].d,left); per[i]+=d; left-=d; i=(i+1)%items.length; }
-        const prefix=tail.slice(0,items[0].i);
-        const cycleNote=rd.dist%S===0?"":"The pattern repeats in order until the "+rd.dist+" is done";
-        items.forEach((it,k)=>{ if(per[k]>0) make(it.words,rd.reps,per[k],[prefix],line,cycleNote||undefined); });
-        continue;
-      }
-      // "4x50 IMO smooth/Fast": alternate zones through the reps
-      let alt=null; const pr=/\b([a-z]+)\s*\/\s*([a-z]+)\b/g; let pm;
-      while((pm=pr.exec(full))){ const a=zoneOf(pm[1],rd.dist), b=zoneOf(pm[2],rd.dist); if(a&&b&&a.v&&b.v&&a.v!==b.v){alt=pm;break;} }
-      if(alt&&rd.reps>=2){
-        const n1=Math.ceil(rd.reps/2);
-        make(full.replace(alt[0],alt[1]),n1,rd.dist,[],line);
-        make(full.replace(alt[0],alt[2]),rd.reps-n1,rd.dist,[],line);
-        continue;
-      }
-      // only part of each rep is fast: "6 strokes fast", "first 15 fast", "fast last 10"
-      const pf=partialFast(full,rd.dist);
-      if(pf){
-        make(pf.rest,rd.reps,rd.dist-pf.d,[],line,"Only "+pf.what+" fast, so the rest of each "+rd.dist+" is counted in its own zone",true);
-        make(pf.fastText,rd.reps,pf.d,[],line,pf.what+" fast"+(pf.est?" (about 1.1 per stroke)":"")+", counted as speed");
-        continue;
-      }
-      // two or more strokes with no distances: "8x50 fly/back", "200 back/breast"
-      const strokesIn=[]; { const rx=/\b(im|i\.m\.|imo|medley|fly|fl|butterfly|back|bk|backstroke|breast|br|brst|breaststroke|free|fr|freestyle|fs)\b/g; let sm; while((sm=rx.exec(full))){ const v=(strokeOf(sm[1])||{}).v; if(v&&!strokesIn.includes(v)) strokesIn.push(v); } }
-      if(strokesIn.length>1){
-        const rest=full.replace(/\b(im|i\.m\.|imo|medley|fly|fl|butterfly|back|bk|backstroke|breast|br|brst|breaststroke|free|fr|freestyle|fs)\b/g," ");
-        const k=strokesIn.length, note="Split evenly between "+strokesIn.join(" and ");
-        const W={Fr:"free",Bk:"back",Br:"breast",Fly:"fly",IM:"im",Prime:"prime"};
-        if(rd.reps>=k) strokesIn.forEach((v,i)=>{ const n=Math.floor(rd.reps/k)+(i<rd.reps%k?1:0); if(n) make(W[v]+" "+rest,n,rd.dist,[],line,note); });
-        else strokesIn.forEach(v=>make(W[v]+" "+rest,rd.reps,Math.round(rd.dist/k),[],line,note));
-        continue;
-      }
-      // kick and swim in one line with no distances: "6x100 kick/swim by 50"
-      if(/\b(kick|kk)\b/.test(full)&&/\b(swim|sw)\b/.test(full)&&!/\b(pull|pads?|paddles?|buoy)\b/.test(full)){
-        const n1=Math.round(rd.dist/2);
-        make(full.replace(/\b(swim|sw)\b/g," "),rd.reps,n1,[],line,"Kick and swim split half and half");
-        make(full.replace(/\b(kick|kk)\b/g," "),rd.reps,rd.dist-n1,[],line,"Kick and swim split half and half");
-        continue;
-      }
-      make(full,rd.reps,rd.dist,[],line);
+      handle(full,rd.reps,rd.dist,0);
     }
     return res;
   }
@@ -890,7 +1040,7 @@ function parseWorkout(text){
 
   for(const raw of rawLines){
     const indent=indentOf(raw);
-    let line=raw.replace(/[\u2013\u2014]/g,"-").replace(/\u2026/g,"...").replace(/ /g," ").replace(/(\d),(\d{3})\b/g,"$1$2");
+    let line=unglue(raw).replace(/[\u2013\u2014]/g,"-").replace(/\u2026/g,"...").replace(/ /g," ").replace(/(\d),(\d{3})\b/g,"$1$2");
     line=line.replace(/\b\d{1,6}\s*(?:m|y|yd|yds)?\s+\d{1,2}:\d{2}\s*(?:am|pm)\b/gi," ").replace(/\b\d{1,2}:\d{2}\s*(?:am|pm)\b/gi," ");
     line=line.replace(/\s+/g," ").trim();
     if(!line){ if(!useIndent){ closeAll(); section=""; } continue; }
@@ -1005,14 +1155,18 @@ function applyRead(sets,skipped,label,meta,merged){
   if(!form.id&&meta.date&&/^\d{4}-\d{2}-\d{2}$/.test(meta.date)&&meta.date!==form.date){ form.date=meta.date; changed.push(nice(meta.date)); }
   if(meta.session==="AM"||meta.session==="PM"){ if(meta.session!==form.session) changed.push(meta.session); form.session=meta.session; }
   if(["SCY","SCM","LCM"].includes(meta.course)){ if(meta.course!==form.course) changed.push(meta.course); form.course=meta.course; }
+  if(meta.athlete&&!form.id&&!form.athleteIds.length){ // title like "Ivan 02-13-26 PM": pick Ivan if he is on the roster
+    const want=meta.athlete.toLowerCase(), hit=athletes.filter(a=>{const n=String(a.name||"").toLowerCase().trim(); return n===want||n.split(/\s+/)[0]===want;});
+    if(hit.length===1){ form.athleteIds=[hit[0].id]; changed.push(hit[0].name); }
+  }
   form.mode="totals"; renderForm(); saveDraft();
   const yd=sets.reduce((a,s)=>a+s.reps*s.dist,0), fl=sets.filter(s=>s.flag).length;
   const u=unitOf(form.course);
   let check="";
   if(meta.stated&&meta.stated.n>0){
     check=Math.round(meta.stated.n)===Math.round(yd)
-      ?' <span class="pill ok">Matches the workout total of '+fmt(meta.stated.n)+' '+esc(meta.stated.unit)+'</span>'
-      :' <span class="pill high">Workout total says '+fmt(meta.stated.n)+' '+esc(meta.stated.unit)+'</span> The sets add up to '+fmt(yd)+'. Check the rounds before saving.';
+      ?' <span class="pill ok">Matches the workout total of '+fmt(meta.stated.n)+' '+esc(meta.stated.unit||u)+'</span>'
+      :' <span class="pill high">Workout total says '+fmt(meta.stated.n)+' '+esc(meta.stated.unit||u)+'</span> The sets add up to '+fmt(yd)+'. Check the rounds before saving.';
   }
   msg.innerHTML=esc(label)+": "+fmt(yd)+" "+u+"."+check+" "+(changed.length?"Set from the workout header: "+esc(changed.join(", "))+". ":"")+(fl?fl+" sets had to be guessed: open <em>How the workout was read</em> below to see which. ":"Check the boxes, then save. ")+(!merged&&sample?"Tap <strong>Check with Claude</strong> to have Claude go over this same reading line by line.":"")+(prev&&!merged?' <span class="note">This replaced the numbers that were already in the boxes.</span> <button class="btn ghost" id="read-undo-sets">Put the old numbers back</button>':"")+skippedList(skipped);
   const ub=document.getElementById("read-undo-sets"); if(ub) ub.onclick=()=>{ form.sets=prev.sets; form.totals=prev.totals; renderForm(); saveDraft(); msg.textContent="Old numbers put back."; };
@@ -1226,11 +1380,17 @@ $("#t-total").oninput=e=>{form.totals.total=e.target.value;saveDraft();updateSum
 $("#f-notes").oninput=e=>{form.notes=e.target.value;saveDraft();};
 $("#cancel-edit").onclick=()=>{form=freshForm();loadDraft();renderForm();};
 
+function saveNote(text,target){
+  const msg=$("#save-msg"); msg.textContent=text; toast(text);
+  const sb=$("#sb-total"); if(sb){ sb.textContent=text; sb.classList.add("warn"); setTimeout(()=>{ sb.classList.remove("warn"); updateSummary(); },3500); }
+  if(target){ target.scrollIntoView({behavior:"smooth",block:"center"}); target.classList.add("attn"); setTimeout(()=>target.classList.remove("attn"),2400); }
+}
 $("#save").onclick=async()=>{
-  const msg=$("#save-msg"); msg.textContent="";
-  if(!form.date){msg.textContent="Pick a date.";return;}
-  if(!form.athleteIds.length){msg.textContent="Choose at least one athlete.";return;}
-  const t=formTotals(); if(!t.total){msg.textContent="Add a workout, or type the total volume.";return;}
+  $("#save-msg").textContent="";
+  if(!form.date){ saveNote("Pick a date first.",$("#f-date")); return; }
+  if(!athletes.length){ saveNote("Add an athlete first, then save.",$("#f-athletes")); openQuickAdd(); return; }
+  if(!form.athleteIds.length){ saveNote("Tap the athlete this practice is for.",$("#f-athletes")); return; }
+  const t=formTotals(); if(!t.total){ saveNote("Add a workout or type the total volume first.",$("#paste-card")); return; }
   const now=new Date().toISOString();
   const doc={date:form.date,session:form.session,course:form.course||"SCY",athleteIds:form.athleteIds.slice(),mode:form.mode,total:t.total,zones:t.zones,strokes:t.strokes,kick:t.kick,pull:t.pull,dolphin:t.dolphin,pullArms:t.pullArms,resist:t.resist,notes:(form.notes||"").trim(),updatedAt:now};
   if(form.sets&&form.sets.length) doc.sets=form.sets.filter(x=>num(x.reps)*num(x.dist)>0).slice(0,200).map(x=>({reps:num(x.reps),dist:num(x.dist),stroke:x.stroke,type:x.type,zone:x.zone,dolphin:!!x.dolphin,armsOnly:!!x.armsOnly,resist:!!x.resist,flag:x.flag||"",src:(x.src||"").slice(0,160)}));
@@ -1240,7 +1400,7 @@ $("#save").onclick=async()=>{
     else { doc.createdAt=now; await db.collection("practices").add(doc); toast("Practice saved"); }
     const keep=form; form=freshForm({date:keep.date,session:keep.session,athleteIds:keep.athleteIds,course:keep.course}); $("#paste").value=""; readState=null; renderCompare(); $("#read-msg").textContent="Saved. Add the next workout when you're ready."; if(keep.id) form.athleteIds=[];
     clearDraft(); renderForm();
-  }catch(e){ msg.textContent=dbMsg(e); }
+  }catch(e){ saveNote(dbMsg(e)); }
   btn.disabled=false;
 };
 function dbMsg(e){

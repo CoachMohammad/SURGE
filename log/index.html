@@ -125,6 +125,10 @@ details#sets-read summary{cursor:pointer;font-weight:600;color:var(--accent)}
 .cmp-row .rd b{color:var(--muted);font-weight:600}
 .g-row{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between}
 .g-row .term{font:700 20px/1 var(--f-display)}
+.quick-ath{width:100%;padding:10px;border:1px dashed var(--line);border-radius:10px}
+.add-chip{border-style:dashed;color:var(--accent)}
+.attn{outline:3px solid var(--low);outline-offset:4px;border-radius:10px;transition:outline-color .3s}
+.sb-total.warn{color:var(--high)}
 .skipped{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:13px}
 .set-row .rm{background:none;border:0;color:var(--muted);font-size:20px;line-height:1;cursor:pointer;border-radius:6px;height:32px}
 .zsel{display:flex;align-items:center;gap:6px;min-width:0}
@@ -515,9 +519,24 @@ const legend='<div class="legend">'+ZONES.map(z=>'<span><i class="sw" style="bac
 /* ---------- LOG: render ---------- */
 function renderAthleteChips(){
   const box=$("#f-athletes");
-  if(!athletes.length){box.innerHTML='<span class="note">No athletes yet. <button class="btn ghost" id="go-ath">Add your first athlete</button></span>';const g=$("#go-ath"); if(g) g.onclick=()=>setTab("athletes"); return;}
-  box.innerHTML=athletes.map(a=>'<button class="chip" id="chip-'+esc(a.id)+'" data-id="'+esc(a.id)+'" aria-pressed="'+(form.athleteIds.includes(a.id)?"true":"false")+'">'+esc(a.name)+'<small>'+esc(shortGroup(a.group))+'</small></button>').join("");
-  box.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{const id=b.dataset.id;const i=form.athleteIds.indexOf(id); if(i>=0) form.athleteIds.splice(i,1); else form.athleteIds.push(id); b.setAttribute("aria-pressed",i>=0?"false":"true"); saveDraft(); renderSummary();});
+  const quick='<div class="row quick-ath" id="quick-ath"'+(athletes.length?' hidden':'')+'><div class="field" style="flex:1 1 150px"><label for="qa-name">'+(athletes.length?"New athlete":"Add your first athlete")+'</label><input id="qa-name" placeholder="Name"></div><div class="field"><label for="qa-group">Group</label><select id="qa-group">'+Object.entries(GROUPS).map(([k,v])=>'<option value="'+k+'"'+(k==="distance"?" selected":"")+'>'+esc(v)+'</option>').join("")+'</select></div><button class="btn primary" id="qa-add">Add</button></div>';
+  if(!athletes.length){ box.innerHTML=quick; wireQuickAdd(); return; }
+  box.innerHTML=quick+athletes.map(a=>'<button class="chip" id="chip-'+esc(a.id)+'" data-id="'+esc(a.id)+'" aria-pressed="'+(form.athleteIds.includes(a.id)?"true":"false")+'">'+esc(a.name)+'<small>'+esc(shortGroup(a.group))+'</small></button>').join("");
+  box.insertAdjacentHTML("beforeend",'<button class="chip add-chip" id="chip-new">+ New athlete</button>');
+  $("#chip-new").onclick=()=>openQuickAdd();
+  wireQuickAdd();
+  box.querySelectorAll(".chip[data-id]").forEach(b=>b.onclick=()=>{const id=b.dataset.id;const i=form.athleteIds.indexOf(id); if(i>=0) form.athleteIds.splice(i,1); else form.athleteIds.push(id); b.setAttribute("aria-pressed",i>=0?"false":"true"); saveDraft(); renderSummary();});
+}
+function openQuickAdd(){ const q=$("#quick-ath"); if(q){ q.hidden=false; const i=$("#qa-name"); if(i) i.focus(); } }
+function wireQuickAdd(){
+  const btn=$("#qa-add"); if(!btn) return;
+  const go=async()=>{
+    const name=$("#qa-name").value.trim(); if(!name){ toast("Type the athlete's name"); $("#qa-name").focus(); return; }
+    try{ const ref=await db.collection("athletes").add({name,group:$("#qa-group").value,prime:"Bk",createdAt:new Date().toISOString()});
+      if(!form.athleteIds.includes(ref.id)) form.athleteIds.push(ref.id); saveDraft(); toast(name+" added"); renderAthleteChips(); renderSummary();
+    }catch(e){ toast(dbMsg(e)); }
+  };
+  btn.onclick=go; $("#qa-name").onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); go(); } };
 }
 const shortGroup=g=>({sprint:"Sprint",mid:"Mid",distance:"Distance"}[g]||"");
 
@@ -1226,11 +1245,17 @@ $("#t-total").oninput=e=>{form.totals.total=e.target.value;saveDraft();updateSum
 $("#f-notes").oninput=e=>{form.notes=e.target.value;saveDraft();};
 $("#cancel-edit").onclick=()=>{form=freshForm();loadDraft();renderForm();};
 
+function saveNote(text,target){
+  const msg=$("#save-msg"); msg.textContent=text; toast(text);
+  const sb=$("#sb-total"); if(sb){ sb.textContent=text; sb.classList.add("warn"); setTimeout(()=>{ sb.classList.remove("warn"); updateSummary(); },3500); }
+  if(target){ target.scrollIntoView({behavior:"smooth",block:"center"}); target.classList.add("attn"); setTimeout(()=>target.classList.remove("attn"),2400); }
+}
 $("#save").onclick=async()=>{
-  const msg=$("#save-msg"); msg.textContent="";
-  if(!form.date){msg.textContent="Pick a date.";return;}
-  if(!form.athleteIds.length){msg.textContent="Choose at least one athlete.";return;}
-  const t=formTotals(); if(!t.total){msg.textContent="Add a workout, or type the total volume.";return;}
+  $("#save-msg").textContent="";
+  if(!form.date){ saveNote("Pick a date first.",$("#f-date")); return; }
+  if(!athletes.length){ saveNote("Add an athlete first, then save.",$("#f-athletes")); openQuickAdd(); return; }
+  if(!form.athleteIds.length){ saveNote("Tap the athlete this practice is for.",$("#f-athletes")); return; }
+  const t=formTotals(); if(!t.total){ saveNote("Add a workout or type the total volume first.",$("#paste-card")); return; }
   const now=new Date().toISOString();
   const doc={date:form.date,session:form.session,course:form.course||"SCY",athleteIds:form.athleteIds.slice(),mode:form.mode,total:t.total,zones:t.zones,strokes:t.strokes,kick:t.kick,pull:t.pull,dolphin:t.dolphin,pullArms:t.pullArms,resist:t.resist,notes:(form.notes||"").trim(),updatedAt:now};
   if(form.sets&&form.sets.length) doc.sets=form.sets.filter(x=>num(x.reps)*num(x.dist)>0).slice(0,200).map(x=>({reps:num(x.reps),dist:num(x.dist),stroke:x.stroke,type:x.type,zone:x.zone,dolphin:!!x.dolphin,armsOnly:!!x.armsOnly,resist:!!x.resist,flag:x.flag||"",src:(x.src||"").slice(0,160)}));
@@ -1240,7 +1265,7 @@ $("#save").onclick=async()=>{
     else { doc.createdAt=now; await db.collection("practices").add(doc); toast("Practice saved"); }
     const keep=form; form=freshForm({date:keep.date,session:keep.session,athleteIds:keep.athleteIds,course:keep.course}); $("#paste").value=""; readState=null; renderCompare(); $("#read-msg").textContent="Saved. Add the next workout when you're ready."; if(keep.id) form.athleteIds=[];
     clearDraft(); renderForm();
-  }catch(e){ msg.textContent=dbMsg(e); }
+  }catch(e){ saveNote(dbMsg(e)); }
   btn.disabled=false;
 };
 function dbMsg(e){

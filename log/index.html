@@ -355,7 +355,7 @@ nav.tabs button{display:inline-flex;align-items:center;gap:6px}
         <div><strong>Zones:</strong> REC, EN1, EN2, EN3, SP1, SP2, SP3; white (REC), pink (EN1), red (EN2), blue (EN2 on 100s and up, EN3 on 75s and down), purple (EN3, or SP1 on 75s and down), green (SP2); WU, warm-up, WD, CD, cool-down, easy, social (REC); aerobic, steady, smooth, drill, DPS (EN1); threshold, CSS, mile pace, think mile (EN2); VO2, 400 or 500 pace (EN3); 200 pace (SP1); 100 pace (SP2); fast, max, sprint, all out, AFAP, burst (set from the distance); bld, build, des, descend (marked Check).</div>
         <div><strong>Patterns:</strong> rounds (2x over indented lines, 3 x [note], 3x through ... by round, START SET / END SET), 100 Fr, 200 IM repeating to the set distance, 75kk/25sw, (25 kick, 75 swim), Odd = dr, Even = sw, fly/back, 6 strokes fast, first 15 fast, 9 x 50 - drill, kick, swim, 6 x 100 - 3 easy 3 fast. Rest lines like 1:00 and running totals like 1500 m 5:25 pm are skipped.</div>
         <div><strong>Rounds:</strong> 2x { }, 2 Rnds { } and 2 rounds repeat what's inside. When rounds differ, each round gets its own part: Rnd1 PB/Pads, Rnd2 Pads; Rnd1= dr, Rnd2= sw; [Rnd1 FR, Rnd2 Prime, Rnd3 Ch]; a line that starts with Rnd2= counts in round 2 only; By Rnd, Bk, 25Fr/25Bk, Fr; Des by Rnd [Pink/Red/Blue]. On a single swim, NegSplit [Pink/Red] is split evenly across the zones.</div>
-        <div><strong>Notes:</strong> explanations in [ ] or ( ), and the workout's Notes section, are saved in the practice's Notes. A zone or color in [ ] still sets the zone, and ( ) with a set inside, like (25 kick, 75 swim), is still counted.</div>
+        <div><strong>Brackets:</strong> what's in [ ], ( ) or { } is read as part of the set. Strokes ([Fly]), kick, pull and gear ([Fins/Pads], (w/ chute)), dolphin kick ([UW]) and zones or colors ([EN2], (Pink), [Pink to Blue] on a descend) are counted. A zone or color in brackets wins over a guess from the set's words. Explanations ([Wide elbow catch], [Bk= High Tempo]) and optional gear ([Pads ok if not too sore]) don't change the count; they're saved in the practice's Notes, with the workout's Notes section.</div>
       </div>
     </details>
   </section>
@@ -838,21 +838,43 @@ function roundTexts(text,R){
 }
 // Notes in ( ) that explain rather than describe the set are treated like [ ] notes.
 const SET_IN_PAREN=/\d+\s*[x×]\s*\d|\b\d+\s*(?:m|y|yd)?\s*(?:kick|kk|swim|sw|pull|pl|drill|dr|free|fr|back|bk|breast|br|fly|im|fast|easy)\b/i;
-function parenNotes(t){ return String(t||"").replace(/\(([^()\n]*)\)/g,(m,c)=>SET_IN_PAREN.test(c)?m:"["+c+"]"); }
+function parenNotes(t){ return String(t||"").replace(/\(([^()\n]*)\)/g,(m,c)=>SET_IN_PAREN.test(c)?m:"["+c+"]").replace(/\{([^{}\n]*[A-Za-z][^{}\n]*)\}/g,(m,c)=>SET_IN_PAREN.test(c)?m:"["+c+"]"); }
+// What a [ ] note says about the set: strokes, kick/pull/gear, zones and colors are used; explanations are only kept as notes.
+const EXPLICIT_Z=/\b(?:en|sp)\s*-?\s*[1-3]\b|\b(?:rec|recovery|white|pink|red|blue|purple|green)\b/;
+function noteHint(notes){
+  return (String(notes||"").match(/\[[^\]]*\]/g)||[]).map(x=>x.slice(1,-1).trim()).filter(c=>c
+    &&!/=/.test(c)                                                  // "Bk= High Tempo, Fr= FCU" explains the set
+    &&!/\b(ok if|if|opt|optional|or|can|may)\b/i.test(c)            // optional gear, "Pads ok if not too sore"
+    &&!/\b(?:rnds?|rounds?)\s*#?\s*\d/i.test(c)                     // rounds are read on their own
+    &&!/^(gear choice|ch|choice)$/i.test(c))
+    .map(c=>c.replace(/\bnot\s+(?:too\s+)?\w+(?:\s+effort)?/gi," ")).join(" ").toLowerCase().trim();
+}
 // [Pink]: a zone written as a note still sets the zone.
 const unbracketZones=t=>t.replace(/\[([^\]]*)\]/g,(m,c)=>new RegExp("^\\s*"+COLOR_W+"\\s*$","i").test(c)?" "+c+" ":m);
 // [Pink/Red] on one swim (NegSplit, Bld): the distance is split evenly across the zones, in order.
+const COLOR_ORDER=["white","pink","red","blue","purple"];
+// "[Pink to Blue]" means Pink, Red, Blue
+const colorRange=c=>c.replace(new RegExp("\\b("+COLOR_ORDER.join("|")+")\\s*(?:to|thru|through|->|→|-)\\s*("+COLOR_ORDER.join("|")+")\\b","gi"),(m,a,b)=>{ const i=COLOR_ORDER.indexOf(a.toLowerCase()), j=COLOR_ORDER.indexOf(b.toLowerCase()); return i<j?COLOR_ORDER.slice(i,j+1).join("/"):m; });
 function colorParts(t){
+  t=t.replace(/\[([^\]]*)\]/g,(m,c)=>"["+colorRange(c)+"]");
   const m=/\[([^\]]*)\]/g; let b;
   while((b=m.exec(t))){ if(!COLOR_LIST.test(b[1])) continue;
     const cs=b[1].split(/\s*[\/,]\s*/).filter(Boolean), sd=/^\s*(\d{1,3})\s*[x×]\s*(\d{2,5})\b/.exec(t);
     const rest=t.slice(0,b.index)+" \u0001 "+t.slice(b.index+b[0].length);
+    // a descending or building set of repeats: the repeats are shared across the colors in order
+    if(sd&&+sd[1]>=cs.length&&/\b(des|desc|descend|descending|bld|build|building|by rep)\b/i.test(t)){
+      const n=+sd[1], base=Math.floor(n/cs.length); let extra=n%cs.length;
+      return cs.map(c=>{ const k=base+(extra>0?(extra--,1):0); return rest.replace(sd[0],k+" x "+sd[2]).replace("\u0001",c).replace(/\b(des|desc|descend|descending|bld|build|building)\b/gi," "); });
+    }
     if(sd&&+sd[2]%cs.length===0&&+sd[2]/cs.length>=25) return cs.map(c=>rest.replace(sd[0],sd[1]+" x "+(+sd[2]/cs.length)).replace("\u0001",c));
     return [rest.replace("\u0001",cs[0])];
   }
   return [t];
 }
 const ROUND_LINE=/^\s*(?:rnds?|rounds?)\s*#?\s*(\d)\s*[:=\-]?\s*/i;
+// A note made only of set words ([Fly], [kick], [Fins/Pads], [Pink], [EN2]) is counted, not kept as a note.
+const SET_WORD=/\b(?:free|fr|freestyle|fs|back|bk|backstroke|breast|br|breaststroke|fly|fl|butterfly|im|imo|rim|medley|prime|choice|ch|swim|sw|kick|kk|pull|pl|drill|dr|pads?|fpads?|paddles?|fins?|buoy|pb|band|snork(?:el)?|chutes?|socks?|sox|towers?|dolphin|uw|uwdk|underwater|white|pink|red|blue|purple|green|rec|en\s*[1-3]|sp\s*[1-3]|easy|ez|smooth|mod|moderate|strong|fast|max|sprint|des|bld|build|descend|w|with|and|on|the|to|thru|through|then)\b/gi;
+const setWordsLeft=c=>c.replace(SET_WORD," ").replace(/[^A-Za-z]+/g,"").length>0;
 // Explanations in [ ] (and note-style ( )) plus the workout's Notes section, kept with the practice.
 function collectNotes(text){
   const out=[], seen=new Set(), add=(x,label)=>{ x=x.replace(/\s+/g," ").trim(); const k=x.toLowerCase(), kl=(label||"").toLowerCase()+"|"+k; if(x&&!seen.has(kl)&&!(!label&&seen.has(k))){ seen.add(kl); seen.add(k); out.push((label?label+": ":"")+x); } };
@@ -868,7 +890,7 @@ function collectNotes(text){
     let m; const re=/\[([^\]]*)\]/g;
     while((m=re.exec(L))){
       const c=m[1].trim();
-      if(!c||/^(ch|gear choice|opt|optional|choice)$/i.test(c)||COLOR_LIST.test(c)||new RegExp("^\\s*"+COLOR_W+"\\s*$","i").test(c)||/\b(?:rnds?|rounds?)\s*#?\s*\d/i.test(c)||/^[\d\s:\/.\-]+$/.test(c)) continue;
+      if(!c||!setWordsLeft(c)||/^(ch|gear choice|opt|optional|choice)$/i.test(c)||COLOR_LIST.test(c)||new RegExp("^\\s*"+COLOR_W+"\\s*$","i").test(c)||/\b(?:rnds?|rounds?)\s*#?\s*\d/i.test(c)||/^[\d\s:\/.\-]+$/.test(c)) continue;
       const before=L.slice(0,m.index).replace(/\[[^\]]*\]/g," ").replace(/@.*$/,"");
       const set=/(\d{1,3}\s*[x×]\s*\d{2,4}.*|\d{2,4}\s+\S.*)$/.exec(before);
       const label=set?set[1].replace(/[\s\-–—,=]+$/,"").trim().slice(0,48):"";
@@ -941,7 +963,7 @@ function parseBlockWorkout(text){
   meta.blocks=checks; meta.duplicate=dup;
   return {sets:merged.map(({_k,...x})=>x),skipped,meta};
 }
-function parseWorkout(text){ const r=parseBlockWorkout(text)||parseWorkoutCore(parenNotes(text)); r.meta=r.meta||{}; const n=collectNotes(text); if(n) r.meta.notes=n; return r; }
+function parseWorkout(text){ const T=parenNotes(text); const r=parseBlockWorkout(T)||parseWorkoutCore(T); r.meta=r.meta||{}; const n=collectNotes(text); if(n) r.meta.notes=n; return r; }
 function parseWorkoutCore(text){
   const out=[], skipped=[];
   const rawLines=String(text||"").split(/\r?\n/);
@@ -950,21 +972,26 @@ function parseWorkoutCore(text){
   const useIndent=rawLines.some(r=>r.trim()&&indentOf(r)>0);
 
   function setsFromLine(line,L,hints){
-    const notes=notesOf(L), main=stripNotes(L);
+    const notes=notesOf(L), main=stripNotes(L), B=noteHint(notes);
     const res=[];
     const make=(seg,reps,dist,extraHints,src,note,calmRest)=>{
       const own=/\b(warm[\s-]?up|warmup|cool[\s-]?down|cooldown|warm[\s-]?down)\b/.test(seg);
       const hs=own?extraHints:extraHints.concat(hints);
       const flags=[];
-      let st=strokeOf(seg); for(const h of hs){ if(st) break; st=strokeOf(h); } st=st||{v:"Fr"}; if(st.flag) flags.push(st.flag);
-      let ty=typeOf(seg); for(const h of hs){ if(ty) break; ty=typeOf(h); } ty=ty||{v:"swim"}; if(ty.flag) flags.push(ty.flag);
+      // what's in [ ] or ( ) counts too: right after the set's own words, before the section heading
+      const hb=B?[B].concat(hs):hs;
+      let st=strokeOf(seg); for(const h of hb){ if(st) break; st=strokeOf(h); } st=st||{v:"Fr"}; if(st.flag) flags.push(st.flag);
+      let ty=typeOf(seg); for(const h of hb){ if(ty) break; ty=typeOf(h); } ty=ty||{v:"swim"}; if(ty.flag) flags.push(ty.flag);
       let z=zoneOf(seg,dist);
-      if(z&&!z.v){ flags.push(z.flag); z=null; }
+      const bz=B?zoneOf(B,dist):null;
+      if(bz&&bz.v&&EXPLICIT_Z.test(B)&&!EXPLICIT_Z.test(seg)) z=bz;   // a zone or color in brackets is the coach being specific
+      if(z&&!z.v){ if(bz&&bz.v) z=bz; else { flags.push(z.flag); z=null; } }
+      if(!z&&bz&&bz.v&&!(calmRest&&bz.flag)) z=bz;
       for(const h of hs.concat(notes?[notes]:[])){ if(z) break; const zz=zoneOf(h,dist); if(zz&&zz.v&&!(calmRest&&zz.flag)) z=zz; }
       if(z&&z.flag) flags.push(z.flag);
       if(!z){ z={v:"EN1"}; if(!flags.length) flags.push("No zone given, set to EN1"); }
       if(note){ for(let i=flags.length-1;i>=0;i--) if(/^Fast or hard set/.test(flags[i])) flags.splice(i,1); flags.unshift(note); }
-      const ctx=[seg].concat(hs).join(" ");
+      const ctx=[seg].concat(hb).join(" ");
       const dolphin=ty.v==="kick"&&(st.v==="Fly"||/\b(dolphin|dol|dk|uwdk|udk|underwater|uw|fly kick|fly kk|fishtail|streamline kick)\b/.test(ctx));
       const armsOnly=ty.v==="pull"&&!/\bfins?\b/.test(ctx)&&/\b(pull|pulls|pulling|pl|buoy|band|strap|pb)\b|\b\d+\s?p\b/.test(ctx);
       const resist=RESIST_RX.test(ctx);

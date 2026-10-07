@@ -352,7 +352,7 @@ nav.tabs button{display:inline-flex;align-items:center;gap:6px}
         <div><strong>Types:</strong> sw, swim, dr, drill, kk, kick, 200k, pull, 200p, pads, paddles, buoy, band, Fins/Pads.</div>
         <div><strong>Dolphin kick:</strong> dolphin, fly kick, UW, UWDK, underwater, streamline kick.</div>
         <div><strong>Resistance / power:</strong> chutes, shoots, parachutes, drag socks, socks, towers, buckets, tethers, stretch cords.</div>
-        <div><strong>Zones:</strong> REC, EN1, EN2, EN3, SP1, SP2, SP3; white (REC), pink (EN1), red (EN2), blue (EN2 on 100s and up, EN3 on 75s and down), purple (EN3, or SP1 on 75s and down), green (SP2); WU, warm-up, WD, CD, cool-down, easy, social (REC); aerobic, steady, smooth, drill, DPS (EN1); threshold, CSS, mile pace, think mile (EN2); VO2, 400 or 500 pace (EN3); 200 pace (SP1); 100 pace (SP2); fast, max, sprint, all out, AFAP, burst (set from the distance); bld, build, des, descend (marked Check).</div>
+        <div><strong>Zones:</strong> REC, EN1, EN2, EN3, SP1, SP2, SP3; white (REC), pink (EN1), red (EN2), blue (EN2 on 100s and up, EN3 on 75s and down), purple (EN3, or SP1 on 75s and down), green (SP2); WU, warm-up, WD, CD, cool-down, easy, social (REC); aerobic, steady, smooth, drill, DPS (EN1); threshold, CSS, mile pace, think mile (EN2); VO2, 400 or 500 pace (EN3); 200 pace (SP1); 100 pace (SP2); fast, max, sprint, all out, AFAP, burst (set from the distance); All Out, Max Effort, Best Effort, Race and Race Pace on 50s to 150s are SP2, and so is any fast 50 to 150 with a work to rest ratio of 1:2 or more rest (from the interval, or RI / rest when written); more than 8 x 25 fast with that much rest is SP2, other fast 25s SP3; an event pace like 1500 race pace keeps its own zone; bld, build, des, descend (marked Check).</div>
         <div><strong>Patterns:</strong> rounds (2x over indented lines, 3 x [note], 3x through ... by round, START SET / END SET), 100 Fr, 200 IM repeating to the set distance, 75kk/25sw, (25 kick, 75 swim), Odd = dr, Even = sw, fly/back, 6 strokes fast, first 15 fast, 9 x 50 - drill, kick, swim, 6 x 100 - 3 easy 3 fast. Rest lines like 1:00 and running totals like 1500 m 5:25 pm are skipped.</div>
         <div><strong>Rounds:</strong> 2x { }, 2 Rnds { } and 2 rounds repeat what's inside. When rounds differ, each round gets its own part: Rnd1 PB/Pads, Rnd2 Pads; Rnd1= dr, Rnd2= sw; [Rnd1 FR, Rnd2 Prime, Rnd3 Ch]; a line that starts with Rnd2= counts in round 2 only; By Rnd, Bk, 25Fr/25Bk, Fr; Des by Rnd [Pink/Red/Blue]. On a single swim, NegSplit [Pink/Red] is split evenly across the zones.</div>
         <div><strong>Brackets:</strong> what's in [ ], ( ) or { } is read as part of the set. Strokes ([Fly]), kick, pull and gear ([Fins/Pads], (w/ chute)), dolphin kick ([UW]) and zones or colors ([EN2], (Pink), [Pink to Blue] on a descend) are counted. A zone or color in brackets wins over a guess from the set's words. Explanations ([Wide elbow catch], [Bk= High Tempo]) and optional gear ([Pads ok if not too sore]) don't change the count; they're saved in the practice's Notes, with the workout's Notes section.</div>
@@ -690,7 +690,7 @@ function typeOf(s){
   return {v:b.val,flag:k&&p?"Kick and pull in one line, counted as "+b.val:""};
 }
 const RESIST_RX=/\b(resgear|chutes?|shoots?|parachutes?|drag[\s-]?socks?|socks?|sox|power[\s-]?towers?|towers?|buckets?|tethers?|tethered|stretch[\s-]?cords?|cords|resisted|resistance|drag[\s-]?suits?|power[\s-]?rack|bungees?)\b/;
-const FAST_RX=/\b(fast|faster|max|max effort|best effort|sprint|sprints|all[\s-]?out|afap|race[\s-]?pace|rp|dive|dives|power|chutes?|shoots?|parachutes?|socks?|sox|resisted|resistance|towers?|buckets?|tethers?|tethered|speed|hard|burst|bursts)\b/;
+const FAST_RX=/\b(fast|faster|max|max effort|best effort|sprint|sprints|all[\s-]?out|afap|race[\s-]?pace|race|rp|dive|dives|power|chutes?|shoots?|parachutes?|socks?|sox|resisted|resistance|towers?|buckets?|tethers?|tethered|speed|hard|burst|bursts)\b/;
 function zoneOf(s,dist){
   if(!s) return null;
   let m=/\b(en|sp)\s*-?\s*([1-3])\b/.exec(s); if(m) return {v:(m[1]+m[2]).toUpperCase()};
@@ -702,10 +702,10 @@ function zoneOf(s,dist){
   if(/\bblue\b/.test(s)) return {v:dist&&dist<=75?"EN3":"EN2"};
   if(/\bpurple\b/.test(s)) return {v:dist&&dist<=75?"SP1":"EN3"};
   if(/\bgreen\b/.test(s)) return {v:"SP2"};
-  if(/\b(threshold|thresh|css|t[\s-]?pace|mile|1650|1500 pace|1000 pace|800 pace|negsplit|neg split|negative split|strong|make it|tempo|high tempo)\b/.test(s)) return {v:"EN2"};
-  if(/\b(vo2|vo2max|vo2 max|400 pace|500 pace)\b/.test(s)) return {v:"EN3"};
-  if(/\b(200 pace|broken 200|lactate tolerance|tolerance)\b/.test(s)) return {v:"SP1"};
-  if(/\b(100 pace|50 pace|broken 100|lactate production)\b/.test(s)) return {v:"SP2"};
+  if(/\b(threshold|thresh|css|t[\s-]?pace|mile|1650|1500 (?:race )?pace|1000 (?:race )?pace|800 (?:race )?pace|1650 (?:race )?pace|mile (?:race )?pace|negsplit|neg split|negative split|strong|make it|tempo|high tempo)\b/.test(s)) return {v:"EN2"};
+  if(/\b(vo2|vo2max|vo2 max|400 (?:race )?pace|500 (?:race )?pace)\b/.test(s)) return {v:"EN3"};
+  if(/\b(200 (?:race )?pace|broken 200|lactate tolerance|tolerance)\b/.test(s)) return {v:"SP1"};
+  if(/\b(100 (?:race )?pace|50 (?:race )?pace|broken 100|lactate production)\b/.test(s)) return {v:"SP2"};
   if(/\b(warm[\s-]?up|warmup|wu|w\/u|cool[\s-]?down|cooldown|warm[\s-]?down|wd|cd|c\/d|easy|ez|loose|loosen|flush|flushout|social|recover|smooth)\b/.test(s)) return {v:"REC"};
   if(FAST_RX.test(s)){
     const d=dist||100;
@@ -839,6 +839,31 @@ function roundTexts(text,R){
 // Notes in ( ) that explain rather than describe the set are treated like [ ] notes.
 const SET_IN_PAREN=/\d+\s*[x×]\s*\d|\b\d+\s*(?:m|y|yd)?\s*(?:kick|kk|swim|sw|pull|pl|drill|dr|free|fr|back|bk|breast|br|fly|im|fast|easy)\b/i;
 function parenNotes(t){ return String(t||"").replace(/\(([^()\n]*)\)/g,(m,c)=>SET_IN_PAREN.test(c)?m:"["+c+"]").replace(/\{([^{}\n]*[A-Za-z][^{}\n]*)\}/g,(m,c)=>SET_IN_PAREN.test(c)?m:"["+c+"]"); }
+/* ---------- coach's speed rules (Oct 2026) ----------
+   All Out, Max Effort, Race, Race Pace (and Best Effort) on 50s to 150s are SP2.
+   Any fast set of 150s and under with a work to rest ratio of 1:2 or more rest is SP2.
+   25s stay SP3, unless there are more than 8 of them with that much rest (then SP2).
+   Work time is estimated from an all-out pace, since the log doesn't know each swimmer's times. */
+const EFFORT_RX=/\b(all[\s-]?out|max(?:imum)?\s*effort|best\s*effort|race\s*pace|race)\b/;
+const ALLOUT_SEC={25:12,50:26,75:41,100:56,150:88};
+function workSec(dist,type,ctx){
+  const k=Object.keys(ALLOUT_SEC).map(Number).sort((a,b)=>Math.abs(a-dist)-Math.abs(b-dist))[0];
+  let t=ALLOUT_SEC[k]*dist/k;
+  if(type==="kick") t*=1.3; else if(/\bfins?\b/.test(ctx)) t*=0.88;
+  return t;
+}
+const secs=x=>{ const m=/^(\d{1,2})?:(\d{2})$/.exec(x); return m?(+(m[1]||0))*60+(+m[2]):+x; };
+// rest after each swim: "RI :20" or ":20 rest" as written, otherwise the interval minus the estimated swim time
+function restSec(text,dist,type){
+  const t=String(text||"").toLowerCase();
+  let extra=0; const ex=/\bextra\s*(\d{0,2}:\d{2})/.exec(t); if(ex) extra=secs(ex[1]);
+  const ri=/\b(?:ri|rest)\s*[:=]?\s*(\d{0,2}:\d{2}|\d{1,3})\b/.exec(t)||/(\d{0,2}:\d{2})\s*rest\b/.exec(t);
+  if(ri) return secs(ri[1])+extra;
+  const iv=/@\s*(\d{1,2}:\d{2}|:\d{2}|\d{2,3})\b/.exec(t);
+  if(!iv) return null;
+  const w=workSec(dist,type,t), r=secs(iv[1])-w;
+  return r>0?r+extra:extra||0;
+}
 // What a [ ] note says about the set: strokes, kick/pull/gear, zones and colors are used; explanations are only kept as notes.
 const EXPLICIT_Z=/\b(?:en|sp)\s*-?\s*[1-3]\b|\b(?:rec|recovery|white|pink|red|blue|purple|green)\b/;
 function noteHint(notes){
@@ -988,6 +1013,14 @@ function parseWorkoutCore(text){
       if(z&&!z.v){ if(bz&&bz.v) z=bz; else { flags.push(z.flag); z=null; } }
       if(!z&&bz&&bz.v&&!(calmRest&&bz.flag)) z=bz;
       for(const h of hs.concat(notes?[notes]:[])){ if(z) break; const zz=zoneOf(h,dist); if(zz&&zz.v&&!(calmRest&&zz.flag)) z=zz; }
+      // the coach's speed rules for fast sets of 150s and under (only when the zone came from "fast" words, not a zone, color or pace)
+      const whole=repsDist(stripNotes(L)); // the interval belongs to the whole repeat, so only whole repeats are judged
+      if(z&&z.flag&&/^Fast or hard set/.test(z.flag)&&dist<=150&&(!whole||whole.dist===dist)){
+        const fx=seg+" "+B, rest=restSec(seg,dist,ty.v)??restSec(line+" "+L,dist,ty.v), ratio=rest==null?null:rest/workSec(dist,ty.v,[seg].concat(hb).join(" "));
+        if(dist>=50&&EFFORT_RX.test(fx)) z={v:"SP2"};
+        else if(dist>=50&&ratio!=null&&ratio>=2) z={v:"SP2"};
+        else if(dist<50&&reps>8&&ratio!=null&&ratio>=2) z={v:"SP2"};
+      }
       if(z&&z.flag) flags.push(z.flag);
       if(!z){ z={v:"EN1"}; if(!flags.length) flags.push("No zone given, set to EN1"); }
       if(note){ for(let i=flags.length-1;i>=0;i--) if(/^Fast or hard set/.test(flags[i])) flags.splice(i,1); flags.unshift(note); }

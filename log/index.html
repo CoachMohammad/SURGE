@@ -411,7 +411,20 @@ const niceLong=s=>parse(s).toLocaleDateString("en-US",{month:"long",day:"numeric
 const zc=z=>"var("+ZVAR[z]+")";
 const unitOf=c=>(c==="SCM"||c==="LCM")?"m":"yd";
 const M2Y=1.0936; // meters to yards
-const toYd=p=>unitOf(p.course)==="m"?M2Y:1;
+const toYd=p=>p.units==="yd"?1:(unitOf(p.course)==="m"?M2Y:1); // saved practices are in yards; older meters ones are converted on load
+const VOL_KEYS=["total","kick","pull","dolphin","pullArms","resist"];
+// the numbers as entered, in the pool's own unit
+const pickVolumes=t=>{ const o={zones:Object.assign({},t.zones||{}),strokes:Object.assign({},t.strokes||{})}; VOL_KEYS.forEach(k=>o[k]=+t[k]||0); return o; };
+// every volume times f (meters to yards), unrounded so the parts still add up to the total
+function scaleVolumes(t,f){ const o=pickVolumes(t); VOL_KEYS.forEach(k=>o[k]=o[k]*f); ZONES.forEach(z=>{ if(o.zones[z]) o.zones[z]=(+o.zones[z]||0)*f; }); STROKES.forEach(x=>{ if(o.strokes[x]) o.strokes[x]=(+o.strokes[x]||0)*f; }); return o; }
+// a practice stored in yards: meters pools keep what was entered in "entered"
+function inYards(d){
+  if(d.units==="yd") return d;
+  const out=Object.assign({},d,{units:"yd"});
+  if(unitOf(d.course)==="m"){ out.entered=Object.assign({unit:"m"},pickVolumes(d)); Object.assign(out,scaleVolumes(d,M2Y)); }
+  return out;
+}
+const asSwum=p=>p.entered&&p.entered.unit==="m"?fmt(p.entered.total)+" m "+(p.course||""):"";
 
 let db=null, user=null, canWrite=true, downloads=null;
 /* ---------- storage on this device: IndexedDB (localStorage if IndexedDB is missing). Nothing leaves the device. ---------- */
@@ -581,7 +594,7 @@ function updateSummary(){
   put("pc-pull",t.total?p1(pct(t.pull,t.total))+"% of total":"");
   put("pc-pullArms",t.total?p1(pct(t.pullArms,t.total))+"% of total":"");
   put("pc-resist",t.total?p1(pct(t.resist,t.total))+"% of total":"");
-  put("sb-total",t.total?fmt(t.total)+" "+u+(form.athleteIds.length?" · "+form.athleteIds.length+" athlete"+(form.athleteIds.length>1?"s":""):" · pick an athlete"):"Nothing to save yet");
+  put("sb-total",t.total?fmt(t.total)+" "+u+(u==="m"?" ("+fmt(t.total*M2Y)+" yd)":"")+(form.athleteIds.length?" · "+form.athleteIds.length+" athlete"+(form.athleteIds.length>1?"s":""):" · pick an athlete"):"Nothing to save yet");
   $("#t-zbar").innerHTML=t.total?zoneBar(t.zones,t.total)+legend:"";
   $("#sum-checks").innerHTML=t.total
     ?'<div class="line"><span>Zones add up to '+fmt(zs)+' '+u+'</span>'+checkPill(zs,t.total)+'</div><div class="line"><span>Strokes add up to '+fmt(ss)+' '+u+'</span>'+checkPill(ss,t.total)+'</div>'
@@ -1567,10 +1580,11 @@ $("#save").onclick=async()=>{
   const now=new Date().toISOString();
   const doc={date:form.date,session:form.session,course:form.course||"SCY",athleteIds:form.athleteIds.slice(),mode:form.mode,total:t.total,zones:t.zones,strokes:t.strokes,kick:t.kick,pull:t.pull,dolphin:t.dolphin,pullArms:t.pullArms,resist:t.resist,notes:(form.notes||"").trim(),updatedAt:now};
   if(form.sets&&form.sets.length) doc.sets=form.sets.filter(x=>num(x.reps)*num(x.dist)>0).slice(0,200).map(x=>({reps:num(x.reps),dist:num(x.dist),stroke:x.stroke,type:x.type,zone:x.zone,dolphin:!!x.dolphin,armsOnly:!!x.armsOnly,resist:!!x.resist,flag:x.flag||"",src:(x.src||"").slice(0,160)}));
+  Object.assign(doc,inYards(doc)); if(doc.sets) doc.setsUnit=unitOf(doc.course);
   const btn=$("#save"); btn.disabled=true;
   try{
-    if(form.id){ const old=practices.find(p=>p.id===form.id); doc.createdAt=(old&&old.createdAt)||now; await db.collection("practices").doc(form.id).set(doc); toast("Changes saved"); }
-    else { doc.createdAt=now; await db.collection("practices").add(doc); toast("Practice saved"); }
+    if(form.id){ const old=practices.find(p=>p.id===form.id); doc.createdAt=(old&&old.createdAt)||now; await db.collection("practices").doc(form.id).set(doc); toast("Changes saved"+(doc.entered?" as "+fmt(doc.total)+" yd":"")); }
+    else { doc.createdAt=now; await db.collection("practices").add(doc); toast("Practice saved"+(doc.entered?" as "+fmt(doc.total)+" yd":"")); }
     const keep=form; form=freshForm({date:keep.date,session:keep.session,athleteIds:keep.athleteIds,course:keep.course}); $("#paste").value=""; readState=null; renderCompare(); $("#read-msg").textContent="Saved. Add the next workout when you're ready."; if(keep.id) form.athleteIds=[];
     clearDraft(); renderForm();
   }catch(e){ saveNote(dbMsg(e)); }
@@ -1746,7 +1760,7 @@ function renderWeek(){
      '<div class="card"><h3>Strokes</h3><div class="tbl-wrap"><table>'+head+strokeRows+'</table></div>'+gap(ssum,"Strokes")+'</div>'+
      '<div class="card"><h3>Kick, pull and resistance</h3><div class="tbl-wrap"><table>'+head+kp+'</table></div><div class="note">'+(anyM?"Meters are converted to yards (1 m = 1.0936 yd) so short course and long course weeks add up. ":"")+'OK means within target. Zone targets are '+(pw?'this week\'s SURGE plan':'the SURGE profile for the group')+', flagged when more than 20% (at least 1.5 points) away. Stroke, kick and pull use the Weekly Volume Mix ranges.</div></div>'+
    '</div>'+
-   '<div class="card"><h3>Practices this week</h3><div class="list">'+ps.map(p=>'<div class="item"><div class="item-top"><span><strong>'+fmt(p.total)+' '+unitOf(p.course)+'</strong> <span class="meta">'+esc(nice(p.date))+' '+esc(p.session)+'</span></span><span class="meta">Kick '+fmt(p.kick||0)+' · Pull '+fmt(p.pull||0)+'</span></div>'+zoneBar(p.zones||{},p.total,true)+(p.notes?'<div class="meta">'+esc(p.notes)+'</div>':"")+'</div>').join("")+'</div></div>';
+   '<div class="card"><h3>Practices this week</h3><div class="list">'+ps.map(p=>'<div class="item"><div class="item-top"><span><strong>'+fmt(p.total*toYd(p))+' yd</strong> <span class="meta">'+esc(nice(p.date))+' '+esc(p.session)+'</span></span><span class="meta">Kick '+fmt((p.kick||0)*toYd(p))+' · Pull '+fmt((p.pull||0)*toYd(p))+'</span></div>'+zoneBar(p.zones||{},p.total,true)+(p.notes?'<div class="meta">'+esc(p.notes)+'</div>':"")+'</div>').join("")+'</div></div>';
   const cb=$("#copy-total"); if(cb) cb.onclick=()=>copyText(String(Math.round(w.total)),"Total copied");
   if(pw) wirePlanCard(a,link,pw,w.total);
 }
@@ -1770,11 +1784,11 @@ function renderHistory(){
   const box=$("#h-list");
   if(!list.length){box.innerHTML='<div class="empty"><strong>No practices logged yet</strong>Saved practices show up here, newest first.</div>';return;}
   box.innerHTML=list.map(p=>'<div class="card item">'+
-    '<div class="item-top"><span><strong>'+fmt(p.total)+' '+unitOf(p.course)+'</strong> <span class="meta">'+esc(nice(p.date))+' '+esc(p.session)+' · '+esc(names(p.athleteIds))+'</span></span>'+
+    '<div class="item-top"><span><strong>'+fmt(p.total*toYd(p))+' yd</strong> <span class="meta">'+esc(nice(p.date))+' '+esc(p.session)+' · '+esc(names(p.athleteIds))+(asSwum(p)?' · swum as '+esc(asSwum(p)):'')+'</span></span>'+
     '<span class="actions">'+(canWrite?(confirmDel===p.id?'<span class="meta">Delete this practice?</span><button class="btn danger" data-del="'+esc(p.id)+'">Delete</button><button class="btn ghost" data-keep="1">Keep</button>':'<button class="btn ghost" data-edit="'+esc(p.id)+'">Edit</button><button class="btn ghost" data-ask="'+esc(p.id)+'">Delete</button>'):"")+'</span></div>'+
     zoneBar(p.zones||{},p.total,true)+
-    '<div class="meta">'+ZONES.filter(z=>p.zones&&p.zones[z]).map(z=>z+" "+fmt(p.zones[z])).join(" · ")+'</div>'+
-    '<div class="meta">'+STROKES.filter(s=>p.strokes&&p.strokes[s]).map(s=>s+" "+fmt(p.strokes[s])).join(" · ")+' · Kick '+fmt(p.kick||0)+(p.dolphin?' (dolphin '+fmt(p.dolphin)+')':"")+' · Pull '+fmt(p.pull||0)+(p.pullArms?' (arms only '+fmt(p.pullArms)+')':"")+(p.resist?' · Resistance '+fmt(p.resist):"")+'</div>'+
+    (f=>'<div class="meta">'+ZONES.filter(z=>p.zones&&p.zones[z]).map(z=>z+" "+fmt(p.zones[z]*f)).join(" · ")+'</div>'+
+    '<div class="meta">'+STROKES.filter(s=>p.strokes&&p.strokes[s]).map(s=>s+" "+fmt(p.strokes[s]*f)).join(" · ")+' · Kick '+fmt((p.kick||0)*f)+(p.dolphin?' (dolphin '+fmt(p.dolphin*f)+')':"")+' · Pull '+fmt((p.pull||0)*f)+(p.pullArms?' (arms only '+fmt(p.pullArms*f)+')':"")+(p.resist?' · Resistance '+fmt(p.resist*f):"")+'</div>')(toYd(p))+
     (p.notes?'<div>'+esc(p.notes)+'</div>':"")+'</div>').join("");
   box.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>editPractice(b.dataset.edit));
   box.querySelectorAll("[data-ask]").forEach(b=>b.onclick=()=>{confirmDel=b.dataset.ask;renderHistory();});
@@ -1786,14 +1800,13 @@ function editPractice(id){
   const p=practices.find(x=>x.id===id); if(!p) return;
   form={id:p.id,date:p.date,session:p.session||"AM",course:p.course||"SCY",athleteIds:(p.athleteIds||[]).slice(),mode:"totals",
     sets:Array.isArray(p.sets)?p.sets.map(x=>Object.assign({},x)):[],
-    totals:{total:p.total||"",zones:Object.assign({},p.zones||{}),strokes:Object.assign({},p.strokes||{}),kick:p.kick||"",pull:p.pull||"",dolphin:p.dolphin||"",pullArms:p.pullArms||"",resist:p.resist||""},notes:p.notes||""};
+    totals:(e=>({total:e.total||"",zones:Object.assign({},e.zones||{}),strokes:Object.assign({},e.strokes||{}),kick:e.kick||"",pull:e.pull||"",dolphin:e.dolphin||"",pullArms:e.pullArms||"",resist:e.resist||""}))(p.entered||p),notes:p.notes||""};
   setTab("log"); renderForm();
 }
 function exportRows(){
   const list=practices.filter(p=>!histAth||(p.athleteIds||[]).includes(histAth)).slice().sort((a,b)=>(a.date+a.session).localeCompare(b.date+b.session));
-  const head=["Date","Session","Course","Athletes","Total"].concat(ZONES,STROKES,["Kick","Dolphin kick","Pull (all pad work)","Arms-only pull","Resistance / power","Total in yards","Notes"]);
-  const R=v=>Math.round(+v||0);
-  const rows=list.map(p=>[p.date,p.session,p.course||"SCY",names(p.athleteIds),R(p.total)].concat(ZONES.map(z=>R(p.zones&&p.zones[z])),STROKES.map(x=>R(p.strokes&&p.strokes[x])),[R(p.kick),R(p.dolphin),R(p.pull),R(p.pullArms),R(p.resist),R((+p.total||0)*toYd(p)),p.notes||""]));
+  const head=["Date","Session","Course","Athletes","Total (yd)"].concat(ZONES.map(z=>z+" yd"),STROKES.map(x=>x+" yd"),["Kick yd","Dolphin kick yd","Pull (all pad work) yd","Arms-only pull yd","Resistance / power yd","As swum","Notes"]);
+  const rows=list.map(p=>{ const f=toYd(p), R=v=>Math.round((+v||0)*f); return [p.date,p.session,p.course||"SCY",names(p.athleteIds),R(p.total)].concat(ZONES.map(z=>R(p.zones&&p.zones[z])),STROKES.map(x=>R(p.strokes&&p.strokes[x])),[R(p.kick),R(p.dolphin),R(p.pull),R(p.pullArms),R(p.resist),asSwum(p)||fmt(p.total*f)+" yd "+(p.course||"SCY"),p.notes||""]); });
   return {head,rows,list};
 }
 function weeklyRows(list){
@@ -1932,9 +1945,13 @@ try{ const t=localStorage.getItem("surge-log-tab"); if(t&&t!=="log") setTab(t); 
     const d=snap.exists?snap.data():null; glossary=d&&Array.isArray(d.terms)?d.terms.filter(g=>g&&g.term&&g.means):[]; glossCache=null;
     if(tab==="terms") renderTerms();
   });
-  db.collection("practices").orderBy("date","desc").limit(5000).onSnapshot(snap=>{
+  let converting=false;
+  db.collection("practices").orderBy("date","desc").limit(5000).onSnapshot(async snap=>{
     practices=snap.docs.map(d=>Object.assign({id:d.id},d.data()));
     renderTab();
+    // practices saved before everything was kept in yards (or restored from an older backup): convert them once
+    const old=snap.docs.filter(d=>{ const v=d.data(); return v&&v.units!=="yd"; });
+    if(old.length&&canWrite&&!converting){ converting=true; try{ for(const d of old) await db.collection("practices").doc(d.id).set(inYards(d.data())); }catch(e){} converting=false; }
   });
   // installable app: offline support when served from its own site (not inside Claude)
   if(!c&&"serviceWorker" in navigator&&(location.protocol==="https:"||/^(localhost|127\.0\.0\.1)$/.test(location.hostname))){ navigator.serviceWorker.register("sw.js").catch(()=>{}); }

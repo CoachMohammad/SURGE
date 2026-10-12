@@ -1601,7 +1601,7 @@ function dbMsg(e){
 /* ---------- SURGE plans (same website, same device) ----------
    SURGE publishes a summary of each saved plan under "surge-bridge-summary": week dates,
    planned volume, week type and zone yards. Week totals sent back go in
-   "surge-bridge-actuals", and SURGE applies them with its own re-plan rules. */
+   "surge-bridge-actuals"; SURGE changes only that week's total, and only if it differs. */
 const PLAN_CUR="__current", BRIDGE_SUM="surge-bridge-summary", BRIDGE_ACT="surge-bridge-actuals";
 const SURGE_URL="../";
 const onSurgeSite=()=>/\/log\/(index\.html)?$/.test(location.pathname);
@@ -1684,7 +1684,7 @@ function planCard(a,g,link,pw,w,ps,end0){
   let sentNote="";
   if(pending) sentNote="Sent "+fmt(+(sentQueue().find(x=>x.plan===link.key&&x.date===pw.date).yards))+" yd. SURGE applies it the next time it opens"+(onSurgeSite()?' (<a href="'+SURGE_URL+'">open SURGE</a>)':"")+".";
   else if(pw.actual) sentNote="SURGE has this week logged at "+fmt(pw.volume)+" yd.";
-  const sendBtn=!canWrite?"":(sendArm===k?'<button class="btn danger" id="pl-send">Send '+fmt(done)+' yd anyway</button><button class="btn ghost" id="pl-cancel">Not yet</button><span class="note">This week isn\'t over. A partial week can make SURGE mark it as a down week and re-plan the weeks after it.</span>'
+  const sendBtn=!canWrite?"":(sendArm===k?'<button class="btn danger" id="pl-send">Send '+fmt(done)+' yd anyway</button><button class="btn ghost" id="pl-cancel">Not yet</button><span class="note">This week isn\'t over yet. Sending now puts '+fmt(done)+' yd in as the week\'s total.</span>'
     :'<button class="btn'+(over&&!pw.actual&&!pending?" primary":"")+'" id="pl-send"'+(done>0?"":" disabled")+'>'+(pw.actual||pending?"Send again":"Send week total to SURGE")+'</button>');
   return '<div class="card plan" style="display:grid;gap:12px">'+
     '<div class="item-top"><h3 style="margin:0">SURGE plan: '+esc(planLabel(link.key))+'</h3><span class="meta">Week '+esc(pw.weekNum)+' · '+esc(pw.label||pw.phase||"")+' · '+esc(nice(pw.date))+' to '+esc(nice(wkEnd))+(link.auto?' · matched by name':'')+'</span></div>'+
@@ -1698,7 +1698,7 @@ function planCard(a,g,link,pw,w,ps,end0){
       '<div><h3>Energy zones</h3><div class="tbl-wrap"><table>'+head+zRows+'</table></div></div>'+
       '<div><h3>Strokes, kick and pull</h3><div class="tbl-wrap"><table>'+sHead+sRows+'</table></div><div class="note">Targets are the Weekly Volume Mix for '+esc(GROUPS[g])+' applied to this week\'s planned volume.</div></div>'+
     '</div>'+
-    '<div class="row">'+sendBtn+(sentNote?'<span class="note">'+sentNote+'</span>':(sendArm===k?'':'<span class="note">Sends the real total so SURGE can re-plan the weeks after it.</span>'))+'</div>'+
+    '<div class="row">'+sendBtn+(sentNote?'<span class="note">'+sentNote+'</span>':(sendArm===k?'':'<span class="note">Changes only this week\'s total in SURGE, and only if it\'s different. Nothing else in the plan changes.</span>'))+'</div>'+
   '</div>';
 }
 function wirePlanCard(a,link,pw,total){

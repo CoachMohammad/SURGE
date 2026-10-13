@@ -1010,7 +1010,15 @@ function parseWorkoutCore(text){
   const useIndent=rawLines.some(r=>r.trim()&&indentOf(r)>0);
 
   function setsFromLine(line,L,hints){
+    L=L.replace(/\b(?:no|without|w\/o)\s+(?:pads?|paddles?|fpads?|ogpads?|buoy|pb|gear)\b/g,m=>m.replace(/[\s\/]+/g,"")); // "no pads" is not pad work
     const notes=notesOf(L), main=stripNotes(L), B=noteHint(notes);
+    // Any pad or buoy work counts as pull, even when the set also says swim, sw or drill ("SW w/FPads", "FPads-- 25dr/25sw").
+    // The gear before "--" (or anywhere on a one-piece line) applies to every part of the set; kick stays kick.
+    const NO_PAD=/\b(?:no|without|w\/o)\s+(?:pads?|paddles?|fpads?|ogpads?|buoy|pb|gear)\b/g, PAD_RX=/\b(pads?|fpads?|ogpads?|paddles?|pb|buoy)\b/;
+    const gearHead=(/--/.test(main)?main.split("--")[0]:main).replace(NO_PAD," ");
+    // gear written before "--" covers the whole set; otherwise only when the line doesn't name its own pull part
+    const padAll=/--/.test(main)?PAD_RX.test(gearHead+" "+B):(PAD_RX.test(main+" "+B)&&!/\b(pull|pulls|pulling|pl)\b|\b\d+\s?p\b/.test(main));
+    let splitPieces=false;
     const res=[];
     const make=(seg,reps,dist,extraHints,src,note,calmRest)=>{
       const own=/\b(warm[\s-]?up|warmup|cool[\s-]?down|cooldown|warm[\s-]?down)\b/.test(seg);
@@ -1020,6 +1028,8 @@ function parseWorkoutCore(text){
       const hb=B?[B].concat(hs):hs;
       let st=strokeOf(seg); for(const h of hb){ if(st) break; st=strokeOf(h); } st=st||{v:"Fr"}; if(st.flag) flags.push(st.flag);
       let ty=typeOf(seg); for(const h of hb){ if(ty) break; ty=typeOf(h); } ty=ty||{v:"swim"}; if(ty.flag) flags.push(ty.flag);
+      let padCtx="";
+      if(ty.v==="swim"){ if(PAD_RX.test(seg.replace(NO_PAD," "))) { ty={v:"pull"}; padCtx=seg; } else if(padAll&&(!splitPieces||/--/.test(main))) { ty={v:"pull"}; padCtx=gearHead; } }
       let z=zoneOf(seg,dist);
       const bz=B?zoneOf(B,dist):null;
       if(bz&&bz.v&&EXPLICIT_Z.test(B)&&!EXPLICIT_Z.test(seg)) z=bz;   // a zone or color in brackets is the coach being specific
@@ -1037,7 +1047,7 @@ function parseWorkoutCore(text){
       if(z&&z.flag) flags.push(z.flag);
       if(!z){ z={v:"EN1"}; if(!flags.length) flags.push("No zone given, set to EN1"); }
       if(note){ for(let i=flags.length-1;i>=0;i--) if(/^Fast or hard set/.test(flags[i])) flags.splice(i,1); flags.unshift(note); }
-      const ctx=[seg].concat(hb).join(" ");
+      const ctx=[seg].concat(hb).join(" ")+(padCtx?" "+padCtx:"");
       const dolphin=ty.v==="kick"&&(st.v==="Fly"||/\b(dolphin|dol|dk|uwdk|udk|underwater|uw|fly kick|fly kk|fishtail|streamline kick)\b/.test(ctx));
       const armsOnly=ty.v==="pull"&&!/\bfins?\b/.test(ctx)&&/\b(pull|pulls|pulling|pl|buoy|band|strap|pb)\b|\b\d+\s?p\b/.test(ctx);
       const resist=RESIST_RX.test(ctx);
@@ -1052,10 +1062,12 @@ function parseWorkoutCore(text){
     let paren=""; const body=main.replace(/\(([^)]*)\)/g,(_,x)=>{paren+=" "+x;return " ";}).replace(/\s+/g," ").trim();
     // "200 free, 200 kick, 200 pull" (only when it isn't a breakdown of the first set)
     let pieces=[body];
+    const setSplit=()=>{ splitPieces=pieces.length>1; };
     if(!/@/.test(body)){
       const ps=body.split(/\s*(?:,|;|\+|\bthen\b)\s*/).filter(x=>x.trim());
       if(ps.length>1&&ps.every(hasDistance)){ const d=ps.map(p=>{const r=repsDist(p);return r.reps*r.dist;}); if(d[0]<d.slice(1).reduce((a,b)=>a+b,0)) pieces=ps; }
     }
+    setSplit();
     const STROKE_WORDS=/\b(rimo|rim|imo|im|i\.m\.|medley|fly|fl|butterfly|back|bk|backstroke|breast|br|brst|breaststroke|free|fr|freestyle|fs)\b/g;
     const W={Fr:"free",Bk:"back",Br:"breast",Fly:"fly",IM:"im",Prime:"prime"};
     // read one piece of a set; it can split itself and read each part again
@@ -1601,7 +1613,7 @@ function dbMsg(e){
 /* ---------- SURGE plans (same website, same device) ----------
    SURGE publishes a summary of each saved plan under "surge-bridge-summary": week dates,
    planned volume, week type and zone yards. Week totals sent back go in
-   "surge-bridge-actuals", and SURGE applies them with its own re-plan rules. */
+   "surge-bridge-actuals"; SURGE changes only that week's total, and only if it differs. */
 const PLAN_CUR="__current", BRIDGE_SUM="surge-bridge-summary", BRIDGE_ACT="surge-bridge-actuals";
 const SURGE_URL="../";
 const onSurgeSite=()=>/\/log\/(index\.html)?$/.test(location.pathname);
@@ -1684,7 +1696,7 @@ function planCard(a,g,link,pw,w,ps,end0){
   let sentNote="";
   if(pending) sentNote="Sent "+fmt(+(sentQueue().find(x=>x.plan===link.key&&x.date===pw.date).yards))+" yd. SURGE applies it the next time it opens"+(onSurgeSite()?' (<a href="'+SURGE_URL+'">open SURGE</a>)':"")+".";
   else if(pw.actual) sentNote="SURGE has this week logged at "+fmt(pw.volume)+" yd.";
-  const sendBtn=!canWrite?"":(sendArm===k?'<button class="btn danger" id="pl-send">Send '+fmt(done)+' yd anyway</button><button class="btn ghost" id="pl-cancel">Not yet</button><span class="note">This week isn\'t over. A partial week can make SURGE mark it as a down week and re-plan the weeks after it.</span>'
+  const sendBtn=!canWrite?"":(sendArm===k?'<button class="btn danger" id="pl-send">Send '+fmt(done)+' yd anyway</button><button class="btn ghost" id="pl-cancel">Not yet</button><span class="note">This week isn\'t over yet. Sending now puts '+fmt(done)+' yd in as the week\'s total.</span>'
     :'<button class="btn'+(over&&!pw.actual&&!pending?" primary":"")+'" id="pl-send"'+(done>0?"":" disabled")+'>'+(pw.actual||pending?"Send again":"Send week total to SURGE")+'</button>');
   return '<div class="card plan" style="display:grid;gap:12px">'+
     '<div class="item-top"><h3 style="margin:0">SURGE plan: '+esc(planLabel(link.key))+'</h3><span class="meta">Week '+esc(pw.weekNum)+' · '+esc(pw.label||pw.phase||"")+' · '+esc(nice(pw.date))+' to '+esc(nice(wkEnd))+(link.auto?' · matched by name':'')+'</span></div>'+
@@ -1698,7 +1710,7 @@ function planCard(a,g,link,pw,w,ps,end0){
       '<div><h3>Energy zones</h3><div class="tbl-wrap"><table>'+head+zRows+'</table></div></div>'+
       '<div><h3>Strokes, kick and pull</h3><div class="tbl-wrap"><table>'+sHead+sRows+'</table></div><div class="note">Targets are the Weekly Volume Mix for '+esc(GROUPS[g])+' applied to this week\'s planned volume.</div></div>'+
     '</div>'+
-    '<div class="row">'+sendBtn+(sentNote?'<span class="note">'+sentNote+'</span>':(sendArm===k?'':'<span class="note">Sends the real total so SURGE can re-plan the weeks after it.</span>'))+'</div>'+
+    '<div class="row">'+sendBtn+(sentNote?'<span class="note">'+sentNote+'</span>':(sendArm===k?'':'<span class="note">Changes only this week\'s total in SURGE, and only if it\'s different. Nothing else in the plan changes.</span>'))+'</div>'+
   '</div>';
 }
 function wirePlanCard(a,link,pw,total){

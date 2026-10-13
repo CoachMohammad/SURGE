@@ -2080,8 +2080,7 @@ function renderAll(){
      type and zone yards, computed with the same functions as the table above) under
      BRIDGE_SUMMARY_KEY whenever plans are saved or SURGE is opened.
    - The log leaves real weekly totals in BRIDGE_ACTUALS_KEY. SURGE applies them the
-     same way as typing a real volume into the table (marked as logged, down-week
-     check, the rest of the block re-planned), so the re-plan rules live only here. */
+     by changing only that week's total, and only if it differs (see bridgeApplyActual). */
 const BRIDGE_SUMMARY_KEY = 'surge-bridge-summary';
 const BRIDGE_ACTUALS_KEY = 'surge-bridge-actuals';
 const BRIDGE_CURRENT = '__current';   // the plan SURGE has open that was never saved by name
@@ -2120,16 +2119,18 @@ function bridgePublish(){
     localStorage.setItem(BRIDGE_SUMMARY_KEY, JSON.stringify({version:1, updatedAt:new Date().toISOString(), plans}));
   }catch(e){ /* best effort */ }
 }
-// Same steps as typing a real week total into the table.
+// Coach request (Oct 2026): a total sent from the log changes ONLY that week's total volume,
+// and only when it differs. No down-week check and no re-plan of the other weeks. The week is
+// marked as logged (blue outline) so a later re-plan from another edit keeps the real number.
+// Its zone yards follow from the new total, as for any week.
 function bridgeApplyActual(date, yards){
   const idx = weeks.findIndex(w=>w.date===date);
   if(idx < 0) return '';
   const v = Math.max(0, Math.round(Number(yards)||0));
+  if(weeks[idx].volume === v) return '';
   weeks[idx].volume = v;
   weeks[idx].actual = true;
-  const note = autoDetectDownWeek(idx, v);
-  recalcAfterPeakEdit(idx, v);
-  return `Week ${idx+1} real volume (${v.toLocaleString()}) came in from the Practice Log. ` + note;
+  return `Week ${idx+1} total set to ${v.toLocaleString()} from the Practice Log. Nothing else in the plan was changed.`;
 }
 function bridgeSync(){
   let queue = [];

@@ -1005,31 +1005,52 @@ function parseBlockWorkout(text){
    A set right after "12x" in [ ] is the set itself, not a note. "8Rnds X, 4Rnds Y" splits the repeats:
    the first 8 rounds are X, the next 4 are Y. It can sit on the set's line or on the line under it. */
 function bracketSets(t){ return String(t||"").replace(/\b(\d{1,3})\s*[x\u00d7]\s*\[([^\]\n]*)\]/g,(m,n,c)=>SET_IN_PAREN.test(c)?n+"x("+c+")":m); }
-const RC_PIECE=/^(\d{1,2})\s*(?:rnds?|rounds?)\b\s*[:=\-]?\s*(\S.*)$/i;
+// "8Rnds IMO, 4Rnds Prime", "8 Rnds IMO 4 Rnds Prime", "8Rnds IMO / 4Rnds Prime", "[8 Rnds = IMO, 4 Rnds = Prime]"
+const RC_TOK=/(\d{1,2})\s*(?:rnds?|rounds?)\b\s*[:=\-]?\s*/gi;
 function roundCounts(s){
-  const ps=String(s||"").split(/\s*(?:,|;|&|\band\b|\bthen\b)\s*/i).map(x=>x.trim()).filter(Boolean);
-  if(ps.length<2) return null;
-  const items=[];
-  for(const p of ps){ const m=RC_PIECE.exec(p); if(!m) return null; items.push({n:+m[1],d:m[2].trim()}); }
+  s=String(s||"").trim().replace(/^[\[(]\s*/,"").replace(/\s*[\])]\s*$/,"");
+  const ms=[]; let m; RC_TOK.lastIndex=0;
+  while((m=RC_TOK.exec(s))) ms.push({n:+m[1],a:m.index,b:m.index+m[0].length});
+  if(ms.length<2||ms[0].a!==0) return null;
+  const items=ms.map((x,i)=>({n:x.n,d:s.slice(x.b,i<ms.length-1?ms[i+1].a:s.length).replace(/\s*\b(?:and|then)\s*$/i,"").replace(/^[\s,;\/&]+|[\s,;\/&]+$/g,"").trim()}));
+  if(items.some(x=>!x.d||/^(?:of|through|thru|x)\b|^\d/i.test(x.d))) return null;
   return items;
 }
 const rcSum=rc=>rc.reduce((a,x)=>a+x.n,0);
+// a line that is only a round count with what to do: "8 Rnds IMO" (several of these in a row are read together)
+const isCountLine=l=>/^\s*[\[(]?\s*\d{1,2}\s*(?:rnds?|rounds?)\b\s*[:=\-]?\s*[a-z]/i.test(l)&&!/^\s*[\[(]?\s*\d{1,2}\s*(?:rnds?|rounds?)\s*(?:of|through|thru)\b/i.test(l);
 function expandCounts(line){
-  const m=/^(\s*)(\d{1,3})\s*[x\u00d7]\s*/.exec(line); if(!m) return null;
-  const re=/(^|[\s,;)\]])(\d{1,2}\s*(?:rnds?|rounds?)\b)/ig; let k=-1, mm;
-  while((mm=re.exec(line))){ const at=mm.index+mm[1].length; if(at>=m[0].length&&roundCounts(line.slice(at))){ k=at; break; } }
-  if(k<0) return null;
-  const rc=roundCounts(line.slice(k)); if(rcSum(rc)!==+m[2]) return null;
-  const body=line.slice(m[0].length,k).replace(/[\s,;:\-]+$/,"");
-  return rc.map(x=>m[1]+x.n+"x"+body+" "+x.d);
+  const m=/^(\s*)(\d{1,3})\s*[x×]\s*/.exec(line); if(!m) return null;
+  const re=/(?:^|[\s,;)\]])([\[(]\s*)?(\d{1,2}\s*(?:rnds?|rounds?)\b)/ig; let mm;
+  while((mm=re.exec(line))){
+    const at=mm.index+mm[0].length-mm[2].length-(mm[1]||"").length;
+    if(at<m[0].length) continue;
+    let part=line.slice(at), after="";
+    if(mm[1]){ const close=part.search(/[\])]/); if(close>0){ after=part.slice(close+1); part=part.slice(0,close+1); } }
+    const rc=roundCounts(part); if(!rc) continue;
+    if(rcSum(rc)!==+m[2]) return null;
+    const body=(line.slice(m[0].length,at).replace(/[\s,;:\-]+$/,"")+" "+after.trim()).trim();
+    return rc.map(x=>m[1]+x.n+"x"+body+" "+x.d);
+  }
+  return null;
 }
 function splitRoundCounts(text){
-  const out=[];
+  // put round-count lines that follow each other on one line: "8 Rnds IMO" + "4 Rnds Prime"
+  const lines=[]; let prevCount=false;
   for(const raw of String(text||"").split(/\r?\n/)){
+    if(isCountLine(raw)){
+      const c=raw.trim().replace(/^[\[(]\s*/,"").replace(/\s*[\])]\s*$/,"");
+      if(prevCount) lines[lines.length-1]+=", "+c; else lines.push(/^\s*/.exec(raw)[0]+c);
+      prevCount=true; continue;
+    }
+    prevCount=false; lines.push(raw);
+  }
+  const out=[];
+  for(const raw of lines){
     const rc=roundCounts(raw.trim());
     if(rc){
       let j=out.length-1; while(j>=0&&!out[j].trim()) j--;
-      const pm=j>=0?/^\s*(\d{1,3})\s*[x\u00d7]\s*\(?\s*\d/.exec(out[j]):null;
+      const pm=j>=0?/^\s*(\d{1,3})\s*[x×]\s*\(?\s*\d/.exec(out[j]):null;
       const ex=pm&&+pm[1]===rcSum(rc)?expandCounts(out[j]+" "+raw.trim()):null;
       if(ex){ out.splice(j,1,...ex); continue; }
       out.push(raw); continue;

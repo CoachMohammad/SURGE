@@ -1005,31 +1005,52 @@ function parseBlockWorkout(text){
    A set right after "12x" in [ ] is the set itself, not a note. "8Rnds X, 4Rnds Y" splits the repeats:
    the first 8 rounds are X, the next 4 are Y. It can sit on the set's line or on the line under it. */
 function bracketSets(t){ return String(t||"").replace(/\b(\d{1,3})\s*[x\u00d7]\s*\[([^\]\n]*)\]/g,(m,n,c)=>SET_IN_PAREN.test(c)?n+"x("+c+")":m); }
-const RC_PIECE=/^(\d{1,2})\s*(?:rnds?|rounds?)\b\s*[:=\-]?\s*(\S.*)$/i;
+// "8Rnds IMO, 4Rnds Prime", "8 Rnds IMO 4 Rnds Prime", "8Rnds IMO / 4Rnds Prime", "[8 Rnds = IMO, 4 Rnds = Prime]"
+const RC_TOK=/(\d{1,2})\s*(?:rnds?|rounds?)\b\s*[:=\-]?\s*/gi;
 function roundCounts(s){
-  const ps=String(s||"").split(/\s*(?:,|;|&|\band\b|\bthen\b)\s*/i).map(x=>x.trim()).filter(Boolean);
-  if(ps.length<2) return null;
-  const items=[];
-  for(const p of ps){ const m=RC_PIECE.exec(p); if(!m) return null; items.push({n:+m[1],d:m[2].trim()}); }
+  s=String(s||"").trim().replace(/^[\[(]\s*/,"").replace(/\s*[\])]\s*$/,"");
+  const ms=[]; let m; RC_TOK.lastIndex=0;
+  while((m=RC_TOK.exec(s))) ms.push({n:+m[1],a:m.index,b:m.index+m[0].length});
+  if(ms.length<2||ms[0].a!==0) return null;
+  const items=ms.map((x,i)=>({n:x.n,d:s.slice(x.b,i<ms.length-1?ms[i+1].a:s.length).replace(/\s*\b(?:and|then)\s*$/i,"").replace(/^[\s,;\/&+]+|[\s,;\/&+]+$/g,"").trim()}));
+  if(items.some(x=>!x.d||/^(?:of|through|thru|x)\b|^\d/i.test(x.d))) return null;
   return items;
 }
 const rcSum=rc=>rc.reduce((a,x)=>a+x.n,0);
+// a line that is only a round count with what to do: "8 Rnds IMO" (several of these in a row are read together)
+const isCountLine=l=>/^\s*[\[(]?\s*\d{1,2}\s*(?:rnds?|rounds?)\b\s*[:=\-]?\s*[a-z]/i.test(l)&&!/^\s*[\[(]?\s*\d{1,2}\s*(?:rnds?|rounds?)\s*(?:of|through|thru)\b/i.test(l);
 function expandCounts(line){
-  const m=/^(\s*)(\d{1,3})\s*[x\u00d7]\s*/.exec(line); if(!m) return null;
-  const re=/(^|[\s,;)\]])(\d{1,2}\s*(?:rnds?|rounds?)\b)/ig; let k=-1, mm;
-  while((mm=re.exec(line))){ const at=mm.index+mm[1].length; if(at>=m[0].length&&roundCounts(line.slice(at))){ k=at; break; } }
-  if(k<0) return null;
-  const rc=roundCounts(line.slice(k)); if(rcSum(rc)!==+m[2]) return null;
-  const body=line.slice(m[0].length,k).replace(/[\s,;:\-]+$/,"");
-  return rc.map(x=>m[1]+x.n+"x"+body+" "+x.d);
+  const m=/^(\s*)(\d{1,3})\s*[x×]\s*/.exec(line); if(!m) return null;
+  const re=/(?:^|[\s,;)\]])([\[(]\s*)?(\d{1,2}\s*(?:rnds?|rounds?)\b)/ig; let mm;
+  while((mm=re.exec(line))){
+    const at=mm.index+mm[0].length-mm[2].length-(mm[1]||"").length;
+    if(at<m[0].length) continue;
+    let part=line.slice(at), after="";
+    if(mm[1]){ const close=part.search(/[\])]/); if(close>0){ after=part.slice(close+1); part=part.slice(0,close+1); } }
+    const rc=roundCounts(part); if(!rc) continue;
+    if(rcSum(rc)!==+m[2]) return null;
+    const body=(line.slice(m[0].length,at).replace(/[\s,;:\-]+$/,"")+" "+after.trim()).trim();
+    return rc.map(x=>m[1]+x.n+"x"+body+" "+x.d);
+  }
+  return null;
 }
 function splitRoundCounts(text){
-  const out=[];
+  // put round-count lines that follow each other on one line: "8 Rnds IMO" + "4 Rnds Prime"
+  const lines=[]; let prevCount=false;
   for(const raw of String(text||"").split(/\r?\n/)){
+    if(isCountLine(raw)){
+      const c=raw.trim().replace(/^[\[(]\s*/,"").replace(/\s*[\])]\s*$/,"");
+      if(prevCount) lines[lines.length-1]+=", "+c; else lines.push(/^\s*/.exec(raw)[0]+c);
+      prevCount=true; continue;
+    }
+    prevCount=false; lines.push(raw);
+  }
+  const out=[];
+  for(const raw of lines){
     const rc=roundCounts(raw.trim());
     if(rc){
       let j=out.length-1; while(j>=0&&!out[j].trim()) j--;
-      const pm=j>=0?/^\s*(\d{1,3})\s*[x\u00d7]\s*\(?\s*\d/.exec(out[j]):null;
+      const pm=j>=0?/^\s*(\d{1,3})\s*[x×]\s*\(?\s*\d/.exec(out[j]):null;
       const ex=pm&&+pm[1]===rcSum(rc)?expandCounts(out[j]+" "+raw.trim()):null;
       if(ex){ out.splice(j,1,...ex); continue; }
       out.push(raw); continue;
@@ -1043,7 +1064,7 @@ function parseWorkoutCore(text){
   const out=[], skipped=[];
   const rawLines=String(text||"").split(/\r?\n/);
   const indentOf=r=>{const m=/^[\s ]*/.exec(r)[0]; let n=0; for(const ch of m) n+=ch==="\t"?4:1; return n;};
-  let section="", stack=[];
+  let section="", stack=[], pendingRC=null, curRound=-1;
   const useIndent=rawLines.some(r=>r.trim()&&indentOf(r)>0);
 
   function setsFromLine(line,L,hints){
@@ -1190,6 +1211,8 @@ function parseWorkoutCore(text){
       // "4x50 IMO smooth/Fast", "Pink/Red": alternate zones through the reps
       let alt=null; const pr=/\b([a-z]+)\s*\/\s*([a-z]+)\b/g; let pm;
       while((pm=pr.exec(full))){ const a=zoneOf(pm[1],dist), b=zoneOf(pm[2],dist); if(a&&b&&a.v&&b.v&&a.v!==b.v){alt=pm;break;} }
+      // inside rounds ("12x" over "50 sw smooth/Fast"), the rounds take turns: round 1 smooth, round 2 fast, ...
+      if(alt&&reps===1&&curRound>=0&&depth<6){ handle(full.replace(alt[0],curRound%2?alt[2]:alt[1]),1,dist,depth+1,note); return; }
       if(alt&&reps>=2&&depth<6){
         const n1=Math.ceil(reps/2);
         handle(full.replace(alt[0],alt[1]),n1,dist,depth+1,note);
@@ -1257,7 +1280,9 @@ function parseWorkoutCore(text){
             if(rl&&+rl[1]<=g.n){ if(r!==+rl[1]-1) continue; L=L.slice(rl[0].length); }
             else { const rt=roundTexts(L,g.n); if(rt) L=rt[r]; }
           }
+          const keep=curRound; curRound=g.n>1?r:-1;
           for(const LL of colorParts(L)) res.push(...setsFromLine(it.line,LL,hints.concat(it.section?[it.section]:[])));
+          curRound=keep;
         }
       }
     }
@@ -1292,6 +1317,16 @@ function parseWorkoutCore(text){
       if(top&&rcSum(rcl)===top.n){ top.byRound=rcl.flatMap(x=>Array(x.n).fill(x.d)); continue; }
       skipped.push(line); continue;
     }
+    // a heading with round counts at the end ("Set 1 -- 6Rnds IMO + 6Rnds Prime"): they go to the "12x" under it
+    let headRC=null;
+    if(!hasDistance(main)){
+      const at=main.search(/(?:^|[\s,;:(\[\-])\d{1,2}\s*(?:rnds?|rounds?)\b/);
+      if(at>0){ const k=main.slice(at).search(/\d/)+at, rc=roundCounts(main.slice(k)); if(rc) headRC={rc,head:main.slice(0,k).replace(/[\s,;:(\[\-]+$/,"").trim()}; }
+      if(headRC){
+        const top=stack[stack.length-1];
+        if(top&&!top.items.length&&rcSum(headRC.rc)===top.n){ top.byRound=headRC.rc.flatMap(x=>Array(x.n).fill(x.d)); continue; }
+      }
+    }
     // rounds: "2x", "3 x [note]", "3x through ... free/choice/free by round", "3 rounds", "x3", "Main set 2x"
     const thr=/^(\d{1,2})\s*(?:x|×)?\s*(?:through|thru|rounds?)\b\.*\s*(.*)$/.exec(main);
     const mult=thr||/(?:^|\s)(\d{1,2})\s*(?:x|×|rounds?|times|sets?)\s*(?:of|thru|through)?\s*[:\-({]?\s*$/.exec(main)||/^x\s*(\d{1,2})\b\s*$/.exec(main);
@@ -1301,7 +1336,9 @@ function parseWorkoutCore(text){
       const br=/(.*?)\bby round\b/.exec(rest);
       const byRound=br?br[1].replace(/\balternating\b/,"").split("/").map(x=>x.trim()).filter(Boolean):[];
       if(!/^\s*(x|\d)/.test(main)) section=main.replace(mult[0]," ").trim();
-      stack.push({n:+mult[1],indent:useIndent?indent:-1,hint:br?"":rest.trim(),byRound,items:[],section});
+      let byR=byRound;
+      if(!byR.length&&pendingRC&&rcSum(pendingRC)===+mult[1]){ byR=pendingRC.flatMap(x=>Array(x.n).fill(x.d)); pendingRC=null; }
+      stack.push({n:+mult[1],indent:useIndent?indent:-1,hint:br?"":rest.trim(),byRound:byR,items:[],section});
       continue;
     }
     if(!hasDistance(main)){
@@ -1310,7 +1347,7 @@ function parseWorkoutCore(text){
         if(/\b(swim|sw|kick|kk|easy|choice|drill|pull)\b/.test(main)) skipped.push(line);
         continue;
       }
-      if(main.length<=60){ if(!useIndent) closeAll(); section=main; }
+      if(main.length<=60){ if(!useIndent) closeAll(); section=headRC?headRC.head:main; pendingRC=headRC?headRC.rc:null; }
       else skipped.push(line);
       continue;
     }

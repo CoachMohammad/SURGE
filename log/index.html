@@ -1012,7 +1012,7 @@ function roundCounts(s){
   const ms=[]; let m; RC_TOK.lastIndex=0;
   while((m=RC_TOK.exec(s))) ms.push({n:+m[1],a:m.index,b:m.index+m[0].length});
   if(ms.length<2||ms[0].a!==0) return null;
-  const items=ms.map((x,i)=>({n:x.n,d:s.slice(x.b,i<ms.length-1?ms[i+1].a:s.length).replace(/\s*\b(?:and|then)\s*$/i,"").replace(/^[\s,;\/&]+|[\s,;\/&]+$/g,"").trim()}));
+  const items=ms.map((x,i)=>({n:x.n,d:s.slice(x.b,i<ms.length-1?ms[i+1].a:s.length).replace(/\s*\b(?:and|then)\s*$/i,"").replace(/^[\s,;\/&+]+|[\s,;\/&+]+$/g,"").trim()}));
   if(items.some(x=>!x.d||/^(?:of|through|thru|x)\b|^\d/i.test(x.d))) return null;
   return items;
 }
@@ -1064,7 +1064,7 @@ function parseWorkoutCore(text){
   const out=[], skipped=[];
   const rawLines=String(text||"").split(/\r?\n/);
   const indentOf=r=>{const m=/^[\s ]*/.exec(r)[0]; let n=0; for(const ch of m) n+=ch==="\t"?4:1; return n;};
-  let section="", stack=[];
+  let section="", stack=[], pendingRC=null, curRound=-1;
   const useIndent=rawLines.some(r=>r.trim()&&indentOf(r)>0);
 
   function setsFromLine(line,L,hints){
@@ -1211,6 +1211,8 @@ function parseWorkoutCore(text){
       // "4x50 IMO smooth/Fast", "Pink/Red": alternate zones through the reps
       let alt=null; const pr=/\b([a-z]+)\s*\/\s*([a-z]+)\b/g; let pm;
       while((pm=pr.exec(full))){ const a=zoneOf(pm[1],dist), b=zoneOf(pm[2],dist); if(a&&b&&a.v&&b.v&&a.v!==b.v){alt=pm;break;} }
+      // inside rounds ("12x" over "50 sw smooth/Fast"), the rounds take turns: round 1 smooth, round 2 fast, ...
+      if(alt&&reps===1&&curRound>=0&&depth<6){ handle(full.replace(alt[0],curRound%2?alt[2]:alt[1]),1,dist,depth+1,note); return; }
       if(alt&&reps>=2&&depth<6){
         const n1=Math.ceil(reps/2);
         handle(full.replace(alt[0],alt[1]),n1,dist,depth+1,note);
@@ -1278,7 +1280,9 @@ function parseWorkoutCore(text){
             if(rl&&+rl[1]<=g.n){ if(r!==+rl[1]-1) continue; L=L.slice(rl[0].length); }
             else { const rt=roundTexts(L,g.n); if(rt) L=rt[r]; }
           }
+          const keep=curRound; curRound=g.n>1?r:-1;
           for(const LL of colorParts(L)) res.push(...setsFromLine(it.line,LL,hints.concat(it.section?[it.section]:[])));
+          curRound=keep;
         }
       }
     }
@@ -1313,6 +1317,16 @@ function parseWorkoutCore(text){
       if(top&&rcSum(rcl)===top.n){ top.byRound=rcl.flatMap(x=>Array(x.n).fill(x.d)); continue; }
       skipped.push(line); continue;
     }
+    // a heading with round counts at the end ("Set 1 -- 6Rnds IMO + 6Rnds Prime"): they go to the "12x" under it
+    let headRC=null;
+    if(!hasDistance(main)){
+      const at=main.search(/(?:^|[\s,;:(\[\-])\d{1,2}\s*(?:rnds?|rounds?)\b/);
+      if(at>0){ const k=main.slice(at).search(/\d/)+at, rc=roundCounts(main.slice(k)); if(rc) headRC={rc,head:main.slice(0,k).replace(/[\s,;:(\[\-]+$/,"").trim()}; }
+      if(headRC){
+        const top=stack[stack.length-1];
+        if(top&&!top.items.length&&rcSum(headRC.rc)===top.n){ top.byRound=headRC.rc.flatMap(x=>Array(x.n).fill(x.d)); continue; }
+      }
+    }
     // rounds: "2x", "3 x [note]", "3x through ... free/choice/free by round", "3 rounds", "x3", "Main set 2x"
     const thr=/^(\d{1,2})\s*(?:x|×)?\s*(?:through|thru|rounds?)\b\.*\s*(.*)$/.exec(main);
     const mult=thr||/(?:^|\s)(\d{1,2})\s*(?:x|×|rounds?|times|sets?)\s*(?:of|thru|through)?\s*[:\-({]?\s*$/.exec(main)||/^x\s*(\d{1,2})\b\s*$/.exec(main);
@@ -1322,7 +1336,9 @@ function parseWorkoutCore(text){
       const br=/(.*?)\bby round\b/.exec(rest);
       const byRound=br?br[1].replace(/\balternating\b/,"").split("/").map(x=>x.trim()).filter(Boolean):[];
       if(!/^\s*(x|\d)/.test(main)) section=main.replace(mult[0]," ").trim();
-      stack.push({n:+mult[1],indent:useIndent?indent:-1,hint:br?"":rest.trim(),byRound,items:[],section});
+      let byR=byRound;
+      if(!byR.length&&pendingRC&&rcSum(pendingRC)===+mult[1]){ byR=pendingRC.flatMap(x=>Array(x.n).fill(x.d)); pendingRC=null; }
+      stack.push({n:+mult[1],indent:useIndent?indent:-1,hint:br?"":rest.trim(),byRound:byR,items:[],section});
       continue;
     }
     if(!hasDistance(main)){
@@ -1331,7 +1347,7 @@ function parseWorkoutCore(text){
         if(/\b(swim|sw|kick|kk|easy|choice|drill|pull)\b/.test(main)) skipped.push(line);
         continue;
       }
-      if(main.length<=60){ if(!useIndent) closeAll(); section=main; }
+      if(main.length<=60){ if(!useIndent) closeAll(); section=headRC?headRC.head:main; pendingRC=headRC?headRC.rc:null; }
       else skipped.push(line);
       continue;
     }

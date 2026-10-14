@@ -1001,7 +1001,44 @@ function parseBlockWorkout(text){
   meta.blocks=checks; meta.duplicate=dup;
   return {sets:merged.map(({_k,...x})=>x),skipped,meta};
 }
-function parseWorkout(text){ const T=parenNotes(text); const r=parseBlockWorkout(T)||parseWorkoutCore(T); r.meta=r.meta||{}; const n=collectNotes(text); if(n) r.meta.notes=n; return r; }
+/* ---------- rounds by count: "12x [50 dr, 50sw] 8Rnds IMO, 4Rnds Prime" ----------
+   A set right after "12x" in [ ] is the set itself, not a note. "8Rnds X, 4Rnds Y" splits the repeats:
+   the first 8 rounds are X, the next 4 are Y. It can sit on the set's line or on the line under it. */
+function bracketSets(t){ return String(t||"").replace(/\b(\d{1,3})\s*[x\u00d7]\s*\[([^\]\n]*)\]/g,(m,n,c)=>SET_IN_PAREN.test(c)?n+"x("+c+")":m); }
+const RC_PIECE=/^(\d{1,2})\s*(?:rnds?|rounds?)\b\s*[:=\-]?\s*(\S.*)$/i;
+function roundCounts(s){
+  const ps=String(s||"").split(/\s*(?:,|;|&|\band\b|\bthen\b)\s*/i).map(x=>x.trim()).filter(Boolean);
+  if(ps.length<2) return null;
+  const items=[];
+  for(const p of ps){ const m=RC_PIECE.exec(p); if(!m) return null; items.push({n:+m[1],d:m[2].trim()}); }
+  return items;
+}
+const rcSum=rc=>rc.reduce((a,x)=>a+x.n,0);
+function expandCounts(line){
+  const m=/^(\s*)(\d{1,3})\s*[x\u00d7]\s*/.exec(line); if(!m) return null;
+  const re=/(^|[\s,;)\]])(\d{1,2}\s*(?:rnds?|rounds?)\b)/ig; let k=-1, mm;
+  while((mm=re.exec(line))){ const at=mm.index+mm[1].length; if(at>=m[0].length&&roundCounts(line.slice(at))){ k=at; break; } }
+  if(k<0) return null;
+  const rc=roundCounts(line.slice(k)); if(rcSum(rc)!==+m[2]) return null;
+  const body=line.slice(m[0].length,k).replace(/[\s,;:\-]+$/,"");
+  return rc.map(x=>m[1]+x.n+"x"+body+" "+x.d);
+}
+function splitRoundCounts(text){
+  const out=[];
+  for(const raw of String(text||"").split(/\r?\n/)){
+    const rc=roundCounts(raw.trim());
+    if(rc){
+      let j=out.length-1; while(j>=0&&!out[j].trim()) j--;
+      const pm=j>=0?/^\s*(\d{1,3})\s*[x\u00d7]\s*\(?\s*\d/.exec(out[j]):null;
+      const ex=pm&&+pm[1]===rcSum(rc)?expandCounts(out[j]+" "+raw.trim()):null;
+      if(ex){ out.splice(j,1,...ex); continue; }
+      out.push(raw); continue;
+    }
+    const ex=expandCounts(raw); if(ex) out.push(...ex); else out.push(raw);
+  }
+  return out.join("\n");
+}
+function parseWorkout(text){ const B0=bracketSets(text); const T=splitRoundCounts(parenNotes(B0)); const r=parseBlockWorkout(T)||parseWorkoutCore(T); r.meta=r.meta||{}; const n=collectNotes(B0); if(n) r.meta.notes=n; return r; }
 function parseWorkoutCore(text){
   const out=[], skipped=[];
   const rawLines=String(text||"").split(/\r?\n/);
@@ -1248,6 +1285,13 @@ function parseWorkoutCore(text){
       if(sm) stack.push({n:+sm[1],indent:useIndent?indent:-1,hint:"",byRound:[],items:[],section});
       continue;
     }
+    // "8Rnds IMO, 4Rnds Prime" under "12x": the first 8 rounds are IM, the next 4 Prime
+    const rcl=roundCounts(main);
+    if(rcl){
+      const top=stack[stack.length-1];
+      if(top&&rcSum(rcl)===top.n){ top.byRound=rcl.flatMap(x=>Array(x.n).fill(x.d)); continue; }
+      skipped.push(line); continue;
+    }
     // rounds: "2x", "3 x [note]", "3x through ... free/choice/free by round", "3 rounds", "x3", "Main set 2x"
     const thr=/^(\d{1,2})\s*(?:x|×)?\s*(?:through|thru|rounds?)\b\.*\s*(.*)$/.exec(main);
     const mult=thr||/(?:^|\s)(\d{1,2})\s*(?:x|×|rounds?|times|sets?)\s*(?:of|thru|through)?\s*[:\-({]?\s*$/.exec(main)||/^x\s*(\d{1,2})\b\s*$/.exec(main);
@@ -1275,6 +1319,8 @@ function parseWorkoutCore(text){
     const rk=(rndSegs(L,false)||{}).max||0, r0=/^\s*(\d{1,3})\s*[x×]\s*(\d{2,4})\b/.exec(L);
     const rts=rk>1&&r0&&+r0[1]%rk===0?roundTexts(L.replace(r0[0],(+r0[1]/rk)+" x "+r0[2]),rk):null;
     const got=(rts||[L]).flatMap(x=>colorParts(x)).flatMap(x=>setsFromLine(line,x,section?[section]:[]));
+    { const r0x=/^\s*(\d{1,3})\s*[x\u00d7]/.exec(L), at=L.search(/\b\d{1,2}\s*(?:rnds?|rounds?)\b/), rc=at>0?roundCounts(L.slice(at)):null;
+      if(r0x&&rc&&rcSum(rc)!==+r0x[1]) got.forEach(g=>g.flag=(g.flag?g.flag+"; ":"")+"Rounds add up to "+rcSum(rc)+", but the set has "+r0x[1]+". Check the rounds."); }
     if(got.length) out.push(...got); else skipped.push(line);
   }
   closeAll();

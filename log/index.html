@@ -72,6 +72,8 @@ h3{font:600 13px/1 var(--f-body);letter-spacing:.12em;text-transform:uppercase;c
 .field label,.lbl{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 input,select,textarea{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 10px;min-width:0}
 input[type=number]{-moz-appearance:textfield}
+.tg input[type=number]{width:72px;padding:6px 8px}
+.tg td,.tg th{white-space:nowrap}
 input::-webkit-outer-spin-button,input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 textarea{width:100%;min-height:64px;resize:vertical}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
@@ -373,6 +375,12 @@ nav.tabs button{display:inline-flex;align-items:center;gap:6px}
       </div>
     </div>
     <div class="list" id="a-list"></div>
+    <div class="card tg" style="display:grid;gap:12px" id="tg-card">
+      <div class="item-top"><h3 style="margin:0">Targets for strokes, kick and pull</h3>
+        <div class="field"><label for="tg-group">Group</label><select id="tg-group"></select></div></div>
+      <div class="note">The Week tab compares each athlete to the targets for their group. Set your own here. Energy zones and weekly volume come from each athlete's SURGE plan, so they aren't set here.</div>
+      <div id="tg-body"></div>
+    </div>
   </section>
 </div>
 <div class="toast" id="toast" hidden></div>
@@ -386,14 +394,30 @@ const STROKES=["Fr","Bk","Br","Fly","Prime","IM"];
 const TYPES=[["swim","Swim"],["kick","Kick"],["pull","Pull"]];
 const GROUPS={sprint:"Sprint (200 & Down)",mid:"Mid Distance (200-500)",distance:"Distance (500 & Up)"};
 // Targets: SURGE zone profiles and the SURGE Weekly Volume Mix sheet.
-const DOL={sprint:[35,50],mid:[25,35],distance:[20,30]}; // dolphin kick, % of all kick
-const ARMS={sprint:15,mid:18,distance:22};             // arms-only pad work, most % of weekly volume
+// Stroke, kick and pull targets can be changed on the Athletes tab (saved on this device and in backups).
+// Energy zones and weekly volume come from SURGE and are not set here.
+const DEF_DOL={sprint:[35,50],mid:[25,35],distance:[20,30]}; // dolphin kick, % of all kick
+const DEF_ARMS={sprint:15,mid:18,distance:22};             // arms-only pad work, most % of weekly volume
 const ZT={sprint:[12,58,13,6,5,2,4],mid:[10,54,21,8,2.5,1.5,3],distance:[10,56,23,6.5,1.5,1,2]};
-const ST={ // [target, low, high]
+const DEF_ST={ // [target, low, high]
   sprint:{Fr:[66,62,70],Bk:[4,3,5],Br:[3,2,4],Fly:[4,3,5],Prime:[10,8,12],IM:[13,10,15],pull:[18,15,20],kick:[18,15,20]},
   mid:{Fr:[70,65,75],Bk:[4,3,5],Br:[3,2,3],Fly:[3,2,4],Prime:[8,6,10],IM:[12,10,15],pull:[21,18,24],kick:[14,12,15]},
   distance:{Fr:[74,70,78],Bk:[4,3,5],Br:[2.5,2,3],Fly:[2.5,2,3],Prime:[5,4,6],IM:[12,10,14],pull:[25,22,28],kick:[13,10,15]}
 };
+const TG_ROWS=["Fr","Bk","Br","Fly","Prime","IM","kick","pull"];
+const jcopy=o=>JSON.parse(JSON.stringify(o));
+let ST=jcopy(DEF_ST), DOL=jcopy(DEF_DOL), ARMS=jcopy(DEF_ARMS), tgCustom={};
+const okPct=v=>typeof v==="number"&&isFinite(v)&&v>=0&&v<=100;
+function applyTargets(t){
+  ST=jcopy(DEF_ST); DOL=jcopy(DEF_DOL); ARMS=jcopy(DEF_ARMS); tgCustom={};
+  if(!t||typeof t!=="object") return;
+  for(const g of Object.keys(DEF_ST)){
+    const s=t.st&&t.st[g], d=t.dol&&t.dol[g], a=t.arms&&t.arms[g];
+    if(s) for(const k of TG_ROWS){ const r=s[k]; if(Array.isArray(r)&&r.length===3&&r.every(okPct)&&r[1]<=r[0]&&r[0]<=r[2]&&JSON.stringify(r)!==JSON.stringify(DEF_ST[g][k])){ ST[g][k]=r.slice(); tgCustom[g]=true; } }
+    if(Array.isArray(d)&&d.length===2&&d.every(okPct)&&d[0]<=d[1]&&JSON.stringify(d)!==JSON.stringify(DEF_DOL[g])){ DOL[g]=d.slice(); tgCustom[g]=true; }
+    if(okPct(a)&&a!==DEF_ARMS[g]){ ARMS[g]=a; tgCustom[g]=true; }
+  }
+}
 
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -482,6 +506,8 @@ const LocalDB=(function(){
       for(const c of ["athletes","practices"]){ const src=data&&data[c]; if(!src||typeof src!=="object") continue;
         for(const [id,v] of Object.entries(src)){ if(!v||typeof v!=="object") continue; const cur=mem[c][id]; if(!cur||String(v.updatedAt||v.createdAt||"")>=String(cur.updatedAt||cur.createdAt||"")){ mem[c][id]=clone(v); counts[c]++; } }
         await persist(c); notify(c); }
+      const tg=data&&data.settings&&data.settings.targets;
+      if(tg&&typeof tg==="object"&&(!mem.settings.targets||String(tg.updatedAt||"")>String(mem.settings.targets.updatedAt||""))){ mem.settings.targets=JSON.parse(JSON.stringify(tg)); counts.targets=1; await persist("settings"); notify("settings"); }
       const inc=data&&data.settings&&data.settings.glossary&&Array.isArray(data.settings.glossary.terms)?data.settings.glossary.terms:[];
       if(inc.length){ const cur=(mem.settings.glossary&&mem.settings.glossary.terms)||[]; const key=g=>(g.term||"").toLowerCase()+"|"+g.means+"|"+(g.words||"");
         const seen=new Set(cur.map(key)); const add=inc.filter(g=>g&&g.term&&g.means&&!seen.has(key(g))); counts.terms=add.length;
@@ -1813,7 +1839,7 @@ function planCard(a,g,link,pw,w,ps,end0){
     (per?'<div class="note">Per practice splits what\'s left over the '+per+' practice'+(per>1?"s":"")+' you have left.</div>':'<div class="note">Enter practices left to see what each one needs.</div>')+
     '<div class="three">'+
       '<div><h3>Energy zones</h3><div class="tbl-wrap"><table>'+head+zRows+'</table></div></div>'+
-      '<div><h3>Strokes, kick and pull</h3><div class="tbl-wrap"><table>'+sHead+sRows+'</table></div><div class="note">Targets are the Weekly Volume Mix for '+esc(GROUPS[g])+' applied to this week\'s planned volume.</div></div>'+
+      '<div><h3>Strokes, kick and pull</h3><div class="tbl-wrap"><table>'+sHead+sRows+'</table></div><div class="note">Targets are '+(tgCustom[g]?'your targets':'the Weekly Volume Mix')+' for '+esc(GROUPS[g])+' applied to this week\'s planned volume.</div></div>'+
     '</div>'+
     '<div class="row">'+sendBtn+(sentNote?'<span class="note">'+sentNote+'</span>':(sendArm===k?'':'<span class="note">Changes only this week\'s total in SURGE, and only if it\'s different. Nothing else in the plan changes.</span>'))+'</div>'+
   '</div>';
@@ -2025,6 +2051,54 @@ function renderAthletes(){
   });
 }
 
+/* ---------- targets for strokes, kick and pull (each coach sets their own) ---------- */
+let tgGroup="distance", tgEdit=null, tgArmReset=false;
+const TG_LABEL={Fr:"Fr",Bk:"Bk",Br:"Br",Fly:"Fly",Prime:"Prime",IM:"IM",kick:"Kick (% of total)",pull:"Pull, all pad work (% of total)"};
+function tgFresh(g){ return {st:jcopy(ST[g]),dol:DOL[g].slice(),arms:ARMS[g]}; }
+function renderTargets(){
+  const sel=$("#tg-group"); if(!sel) return;
+  if(!sel.options.length) sel.innerHTML=Object.entries(GROUPS).map(([k,v])=>'<option value="'+k+'">'+esc(v)+'</option>').join("");
+  sel.value=tgGroup; sel.disabled=false;
+  if(!tgEdit||tgEdit.g!==tgGroup) tgEdit=Object.assign({g:tgGroup},tgFresh(tgGroup));
+  const e=tgEdit, ro=canWrite?"":" disabled";
+  const inp=(k,i,v)=>'<input type="number" inputmode="decimal" min="0" max="100" step="0.5" data-k="'+k+'" data-i="'+i+'" value="'+v+'" aria-label="'+esc((TG_LABEL[k]||k)+" "+["target","low","high"][i])+'"'+ro+'>';
+  const rows=TG_ROWS.map(k=>'<tr><td>'+esc(TG_LABEL[k])+'</td><td>'+inp(k,0,e.st[k][0])+'</td><td>'+inp(k,1,e.st[k][1])+'</td><td>'+inp(k,2,e.st[k][2])+'</td></tr>').join("")
+    +'<tr><td>Dolphin kick (% of kick)</td><td class="meta">-</td><td>'+inp("dol",0,e.dol[0])+'</td><td>'+inp("dol",1,e.dol[1])+'</td></tr>'
+    +'<tr><td>Arms-only pull, at most (% of total)</td><td class="meta">-</td><td class="meta">-</td><td>'+inp("arms",0,e.arms)+'</td></tr>';
+  const sum=STROKES.reduce((a,k)=>a+(+e.st[k][0]||0),0);
+  const bad=TG_ROWS.filter(k=>!(e.st[k][1]<=e.st[k][0]&&e.st[k][0]<=e.st[k][2]));
+  const msgs=[];
+  if(Math.abs(sum-100)>0.05) msgs.push('Stroke targets add up to '+p1(sum)+'%. They should add up to 100%.');
+  if(bad.length) msgs.push('Low must be at or under the target, and high at or over it: '+bad.map(k=>TG_LABEL[k].split(" ")[0]).join(", ")+'.');
+  if(e.dol[0]>e.dol[1]) msgs.push('Dolphin kick low is above high.');
+  const changed=JSON.stringify(tgFresh(tgGroup))!==JSON.stringify({st:e.st,dol:e.dol,arms:e.arms});
+  $("#tg-body").innerHTML='<div class="tbl-wrap"><table><tr><th></th><th>Target</th><th>Low</th><th>High</th></tr>'+rows+'</table></div>'
+    +'<div class="note">Stroke targets add up to <strong>'+p1(sum)+'%</strong>. '+(tgCustom[tgGroup]?'These are your targets for '+esc(GROUPS[tgGroup])+'.':'These are the SURGE Weekly Volume Mix defaults for '+esc(GROUPS[tgGroup])+'.')+'</div>'
+    +(msgs.length?'<div class="banner">'+msgs.map(esc).join(" ")+'</div>':'')
+    +(canWrite?'<div class="row"><button class="btn primary" id="tg-save"'+(changed&&!msgs.length?'':' disabled')+'>Save targets</button>'
+      +(changed?'<button class="btn ghost" id="tg-undo">Undo changes</button>':'')
+      +(tgCustom[tgGroup]&&!changed?(tgArmReset?'<button class="btn danger" id="tg-reset">Go back to defaults</button><button class="btn ghost" id="tg-keep">Keep mine</button>':'<button class="btn ghost" id="tg-ask">Go back to defaults</button>'):'')
+      +'</div>':'');
+  $("#tg-body").querySelectorAll("input").forEach(x=>x.onchange=()=>{
+    const v=parseFloat(x.value), k=x.dataset.k, i=+x.dataset.i; const n=isFinite(v)?Math.max(0,Math.min(100,Math.round(v*10)/10)):0;
+    if(k==="dol") e.dol[i]=n; else if(k==="arms") e.arms=n; else e.st[k][i]=n;
+    renderTargets();
+  });
+  const b=id=>$("#"+id);
+  if(b("tg-undo")) b("tg-undo").onclick=()=>{ tgEdit=null; renderTargets(); };
+  if(b("tg-ask")) b("tg-ask").onclick=()=>{ tgArmReset=true; renderTargets(); };
+  if(b("tg-keep")) b("tg-keep").onclick=()=>{ tgArmReset=false; renderTargets(); };
+  if(b("tg-save")) b("tg-save").onclick=()=>saveTargets(tgGroup,{st:e.st,dol:e.dol,arms:e.arms},"Targets saved for "+GROUPS[tgGroup]);
+  if(b("tg-reset")) b("tg-reset").onclick=()=>{ tgArmReset=false; saveTargets(tgGroup,{st:jcopy(DEF_ST[tgGroup]),dol:DEF_DOL[tgGroup].slice(),arms:DEF_ARMS[tgGroup]},"Back to the defaults for "+GROUPS[tgGroup]); };
+}
+async function saveTargets(g,v,msg){
+  const st={},dol={},arms={};
+  for(const k of Object.keys(DEF_ST)){ st[k]=jcopy(ST[k]); dol[k]=DOL[k].slice(); arms[k]=ARMS[k]; }
+  st[g]=jcopy(v.st); dol[g]=v.dol.slice(); arms[g]=v.arms;
+  try{ await db.doc("settings/targets").set({st,dol,arms,updatedAt:new Date().toISOString()}); applyTargets({st,dol,arms}); tgEdit=null; renderTargets(); toast(msg); }catch(e){ toast(dbMsg(e)); }
+}
+$("#tg-group").onchange=e=>{ tgGroup=e.target.value; tgEdit=null; tgArmReset=false; renderTargets(); };
+
 /* ---------- tabs ---------- */
 function setTab(t){
   tab=t;
@@ -2033,7 +2107,7 @@ function setTab(t){
   try{localStorage.setItem("surge-log-tab",t);}catch(e){}
   renderTab();
 }
-function renderTab(){ if(tab==="week") renderWeek(); else if(tab==="history"){ renderHistory(); renderBackupNote(); } else if(tab==="athletes") renderAthletes(); else if(tab==="terms") renderTerms(); }
+function renderTab(){ if(tab==="week") renderWeek(); else if(tab==="history"){ renderHistory(); renderBackupNote(); } else if(tab==="athletes"){ renderAthletes(); renderTargets(); } else if(tab==="terms") renderTerms(); }
 document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
 
 function setReadOnly(){
@@ -2057,6 +2131,10 @@ try{ const t=localStorage.getItem("surge-log-tab"); if(t&&t!=="log") setTab(t); 
     athletes=snap.docs.map(d=>Object.assign({id:d.id},d.data()));
     form.athleteIds=form.athleteIds.filter(id=>athletes.some(a=>a.id===id)||form.id);
     renderAthleteChips(); renderTab();
+  });
+  db.doc("settings/targets").onSnapshot(snap=>{
+    applyTargets(snap.exists?snap.data():null);
+    if(tab==="athletes") renderTargets(); else if(tab==="week") renderWeek();
   });
   db.doc("settings/glossary").onSnapshot(snap=>{
     const d=snap.exists?snap.data():null; glossary=d&&Array.isArray(d.terms)?d.terms.filter(g=>g&&g.term&&g.means):[]; glossCache=null;

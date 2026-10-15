@@ -768,7 +768,8 @@ function cleanNums(s){
 function repsDist(s){
   const c=cleanNums(s);
   let m=/(\d+)\s*[x×*]\s*(\d+)\s*(?:'?s\b|[kpd]\b|yds?\b|m\b)?/.exec(c);
-  if(m){let a=+m[1],b=+m[2]; if(a>b&&b<=20&&a>=25){const t=a;a=b;b=t;} if(b>=25&&b%25===0&&a>=1&&a<=200) return {reps:a,dist:b,tail:c.slice(m.index+m[0].length),pre:c.slice(0,m.index)};}
+  // "8x30": short-course and cross-pool distances that aren't 25s count too (but "4x30 sec" is time, not distance)
+  if(m){let a=+m[1],b=+m[2]; if(a>b&&b<=20&&a>=25){const t=a;a=b;b=t;} const after=c.slice(m.index+m[0].length), odd=b%25!==0&&b>=10&&b<=1500&&b%5===0&&!/(?:'?s|sec)\s*$/i.test(m[0].trim())&&!/^\s*(?:sec|secs|seconds?\b|"|:)/i.test(after); if((b>=25&&b%25===0||odd)&&a>=1&&a<=200) return {reps:a,dist:b,tail:c.slice(m.index+m[0].length),pre:c.slice(0,m.index)};}
   const re=/\b(\d{2,5})\s*(?:'?s\b|[kpd]\b|yds?\b|yards?\b|m\b)?/g; let mm;
   while((mm=re.exec(c))){
     const d=+mm[1];

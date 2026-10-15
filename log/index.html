@@ -1118,7 +1118,16 @@ function parseWorkoutCore(text){
       for(const piece of par[2].split(/\s*(?:,|;|\+|\bthen\b)\s*/)){ const rd=repsDist(piece); if(rd) make(piece,rd.reps*(+par[1]),rd.dist,[par[3]],line); }
       return res;
     }
-    let paren=""; const body=main.replace(/\(([^)]*)\)/g,(_,x)=>{paren+=" "+x;return " ";}).replace(/\s+/g," ").trim();
+    // a breakdown in ( ) right after one part of the set belongs to that part only:
+    // "600 300sw (75Fr/75Bk), 200IM dr, 100KK" = 150 Fr + 150 Bk swim, 200 IM drill, 100 kick
+    const firstD=main.search(/\d{2,4}/);
+    const mainB=main.replace(/(\d{2,4})(\s*[a-z][a-z ]*?)?\s*\(([^()]*)\)/g,(m,d,w,inner,at)=>{
+      if(at<=firstD) return m;
+      const it=scanItems(inner); const S2=it.reduce((x,y)=>x+y.d,0);
+      if(it.length<2||!S2||+d%S2!==0||it.some(x=>!x.words)) return m;
+      const k=+d/S2; return it.map(x=>(x.d*k)+" "+(w||"").trim()+" "+x.words).join(", ");
+    });
+    let paren=""; const body=mainB.replace(/\(([^)]*)\)/g,(_,x)=>{paren+=" "+x;return " ";}).replace(/\s+/g," ").trim();
     // "200 free, 200 kick, 200 pull" (only when it isn't a breakdown of the first set)
     let pieces=[body];
     const setSplit=()=>{ splitPieces=pieces.length>1; };

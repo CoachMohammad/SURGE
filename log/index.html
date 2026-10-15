@@ -698,6 +698,7 @@ function strokeOf(s){
 }
 function typeOf(s){
   if(!s) return null;
+  s=String(s).replace(/\b(?:no|without|w\/o)\s+(?:pads?|paddles?|fpads?|ogpads?|buoy|pb|gear)\b/gi," ");
   const b=firstOf(s,TYPE_RX); if(!b) return null;
   const k=TYPE_RX.some(([re,v])=>v==="kick"&&re.test(s)), p=TYPE_RX.some(([re,v])=>v==="pull"&&re.test(s));
   return {v:b.val,flag:k&&p?"Kick and pull in one line, counted as "+b.val:""};
@@ -1064,7 +1065,7 @@ function parseWorkoutCore(text){
   const out=[], skipped=[];
   const rawLines=String(text||"").split(/\r?\n/);
   const indentOf=r=>{const m=/^[\s ]*/.exec(r)[0]; let n=0; for(const ch of m) n+=ch==="\t"?4:1; return n;};
-  let section="", stack=[], pendingRC=null, curRound=-1;
+  let section="", stack=[], pendingRC=null, pendingRnd=null, curRound=-1;
   const useIndent=rawLines.some(r=>r.trim()&&indentOf(r)>0);
 
   function setsFromLine(line,L,hints){
@@ -1326,6 +1327,17 @@ function parseWorkoutCore(text){
         const top=stack[stack.length-1];
         if(top&&!top.items.length&&rcSum(headRC.rc)===top.n){ top.byRound=headRC.rc.flatMap(x=>Array(x.n).fill(x.d)); continue; }
       }
+      // "Set 1 -- Rnd1: PB/Pads, Rnd2: Pads, Rnd3: no pads!": each round of the "3x" under it gets its own part
+      if(!headRC){
+        const at2=main.search(/\b(?:rnds?|rounds?)\s*#?\s*\d/);
+        const rs=at2>=0?rndSegs(main.slice(at2),true):null;
+        if(rs&&rs.max>=2){
+          const byR=Array.from({length:rs.max},(_,k)=>rs.segs[k+1]||"");
+          const top=stack[stack.length-1];
+          if(top&&!top.items.length&&rs.max<=top.n){ top.byRound=byR; continue; }
+          headRC={rnd:byR,head:main.slice(0,at2).replace(/[\s,;:(\[\-]+$/,"").trim()};
+        }
+      }
     }
     // rounds: "2x", "3 x [note]", "3x through ... free/choice/free by round", "3 rounds", "x3", "Main set 2x"
     const thr=/^(\d{1,2})\s*(?:x|×)?\s*(?:through|thru|rounds?)\b\.*\s*(.*)$/.exec(main);
@@ -1338,6 +1350,7 @@ function parseWorkoutCore(text){
       if(!/^\s*(x|\d)/.test(main)) section=main.replace(mult[0]," ").trim();
       let byR=byRound;
       if(!byR.length&&pendingRC&&rcSum(pendingRC)===+mult[1]){ byR=pendingRC.flatMap(x=>Array(x.n).fill(x.d)); pendingRC=null; }
+      if(!byR.length&&pendingRnd&&pendingRnd.length<=+mult[1]){ byR=pendingRnd; pendingRnd=null; }
       stack.push({n:+mult[1],indent:useIndent?indent:-1,hint:br?"":rest.trim(),byRound:byR,items:[],section});
       continue;
     }
@@ -1347,7 +1360,7 @@ function parseWorkoutCore(text){
         if(/\b(swim|sw|kick|kk|easy|choice|drill|pull)\b/.test(main)) skipped.push(line);
         continue;
       }
-      if(main.length<=60){ if(!useIndent) closeAll(); section=headRC?headRC.head:main; pendingRC=headRC?headRC.rc:null; }
+      if(main.length<=60){ if(!useIndent) closeAll(); section=headRC?headRC.head:main; pendingRC=headRC&&headRC.rc?headRC.rc:null; pendingRnd=headRC&&headRC.rnd?headRC.rnd:null; }
       else skipped.push(line);
       continue;
     }
@@ -1363,7 +1376,7 @@ function parseWorkoutCore(text){
   closeAll();
   const merged=[];
   for(const s of out){
-    const k=[s.src,s.dist,s.stroke,s.type,s.zone,s.flag].join("|");
+    const k=[s.src,s.dist,s.stroke,s.type,s.zone,s.flag,s.dolphin,s.armsOnly,s.resist].join("|");
     const prev=merged.find(m=>m._k===k);
     if(prev) prev.reps+=s.reps; else merged.push(Object.assign({_k:k},s));
   }

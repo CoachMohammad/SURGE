@@ -319,6 +319,7 @@ nav.tabs button{display:inline-flex;align-items:center;gap:6px}
       <h2>History</h2>
       <div class="row">
         <div class="field"><label for="h-ath">Athlete</label><select id="h-ath"></select></div>
+        <div class="field"><label for="h-week">Week</label><select id="h-week"></select></div>
         <button class="btn" id="export">Export to Excel</button>
         <button class="btn" id="backup">Back up</button>
         <span class="btn filebtn" id="restore-lbl">Restore<input type="file" id="restore" accept=".json,application/json" aria-label="Restore the log from a backup file"></span>
@@ -523,7 +524,9 @@ async function saveFile(name,blob){
 }
 let athletes=[], practices=[];
 let tab="log";
-let weekAth="", weekOf=weekStart(iso(new Date())), histAth="";
+let weekAth="", weekOf=weekStart(iso(new Date())), histAth="", histWeek="";
+// History: the practices for the chosen athlete and week (Monday to Sunday)
+const histList=()=>practices.filter(p=>(!histAth||(p.athleteIds||[]).includes(histAth))&&(!histWeek||weekStart(p.date)===histWeek));
 const blankSet=()=>({reps:1,dist:"",stroke:"Fr",type:"swim",zone:"EN1"});
 let form=freshForm();
 function freshForm(keep){
@@ -761,7 +764,7 @@ function cleanNums(s){
     .replace(/\b(on|@|every|rest|r)\s*\d+\b/g," ")
     .replace(/\b\d+\s*(sec|secs|seconds|s rest|%|bpm|hr|rpm|min|mins|minutes)\b/g," ")
     .replace(/\b\d+(st|nd|rd|th)\b/g," ")
-    .replace(/\b\d+\.\d+\b/g," ")
+    .replace(/\b\d+\.\d+\b/g,m=>+m>=10&&/\.5$/.test(m)?m:" ") // keep half lengths like 12.5
     .replace(/\b\d+\s*-\s*\d+\b/g," ");
 }
 // reps and distance at the start of the set, and the text after it
@@ -782,7 +785,7 @@ const stripNotes=s=>s.replace(/\[[^\]]*\]/g," ").replace(/\s+/g," ").trim();
 const notesOf=s=>(s.match(/\[[^\]]*\]/g)||[]).join(" ");
 // distances inside a description: "200fr, 100bk", "75kk/25sw burst", "35m bld/15m fast"
 function scanItems(t){
-  const acc=[]; const re=/\d+/g; let m;
+  const acc=[]; const re=/\d+(?:\.\d+)?/g; let m;
   while((m=re.exec(t))){
     const n=+m[0], i=m.index, end=i+m[0].length, before=t.slice(0,i), after=t.slice(end);
     if(n<10||n>2000) continue;
@@ -1118,7 +1121,8 @@ function parseWorkoutCore(text){
       if(ty.v==="swim"){ if(PAD_RX.test(seg.replace(NO_PAD," "))) { ty={v:"pull"}; padCtx=seg; } else if(padAll&&(!splitPieces||/--/.test(main))) { ty={v:"pull"}; padCtx=gearHead; } }
       let z=zoneOf(seg,dist);
       const bz=B?zoneOf(B,dist):null;
-      if(bz&&bz.v&&EXPLICIT_Z.test(B)&&!EXPLICIT_Z.test(seg)) z=bz;   // a zone or color in brackets is the coach being specific
+      const multiZ=B?new Set((B.match(new RegExp(EXPLICIT_Z.source,"g"))||[]).map(x=>x.replace(/[\s-]/g,""))).size>1:false;
+      if(bz&&bz.v&&EXPLICIT_Z.test(B)&&!EXPLICIT_Z.test(seg)&&!(multiZ&&z&&z.v)) z=bz;   // a zone or color in brackets is the coach being specific
       if(z&&!z.v){ if(bz&&bz.v) z=bz; else { flags.push(z.flag); z=null; } }
       if(!z&&bz&&bz.v&&!(calmRest&&bz.flag)) z=bz;
       for(const h of hs.concat(notes?[notes]:[])){ if(z) break; const zz=zoneOf(h,dist); if(zz&&zz.v&&!(calmRest&&zz.flag)) z=zz; }
@@ -1242,6 +1246,9 @@ function parseWorkoutCore(text){
         while(left>0&&guard++<2000){ const d=Math.min(items[i].d,left); per[i]+=d; left-=d; i=(i+1)%items.length; }
         const prefix=tail.slice(0,items[0].i);
         const cycleNote=dist%S===0?"":"The pattern repeats in order until the "+dist+" is done";
+        // half lengths ("12.5 scull ... 12.5 scull"): the same part twice in a rep is counted as one piece (25 scull)
+        if(items.some(x=>x.d%1)){ const g=new Map(); items.forEach((it,k)=>{ if(per[k]<=0) return; const key=it.words.trim(); if(!g.has(key)) g.set(key,{w:it.words,d:0}); g.get(key).d+=per[k]; });
+          g.forEach(x=>handle(x.w+" "+prefix,reps,x.d,9,cycleNote||note)); return; }
         items.forEach((it,k)=>{ if(per[k]>0) handle(it.words+" "+prefix,reps,per[k],9,cycleNote||note); });
         return;
       }
@@ -1924,10 +1931,19 @@ function names(ids){return (ids||[]).map(id=>{const a=athletes.find(x=>x.id===id
 function renderHistory(){
   const sel=$("#h-ath");
   sel.innerHTML='<option value="">All athletes</option>'+athletes.map(a=>'<option value="'+esc(a.id)+'"'+(a.id===histAth?" selected":"")+">"+esc(a.name)+"</option>").join("");
-  const list=practices.filter(p=>!histAth||(p.athleteIds||[]).includes(histAth));
+  const base=practices.filter(p=>!histAth||(p.athleteIds||[]).includes(histAth));
+  const wks=[...new Set(base.map(p=>weekStart(p.date)))].sort().reverse();
+  if(histWeek&&!wks.includes(histWeek)) histWeek="";
+  const cnt=w=>base.filter(p=>weekStart(p.date)===w).length;
+  $("#h-week").innerHTML='<option value="">All weeks</option>'+wks.map(w=>'<option value="'+w+'"'+(w===histWeek?" selected":"")+">"+esc(nice(w)+" to "+nice(addDays(w,6)))+" ("+cnt(w)+")</option>").join("");
+  const list=histList();
   const box=$("#h-list");
   if(!list.length){box.innerHTML='<div class="empty"><strong>No practices logged yet</strong>Saved practices show up here, newest first.</div>';return;}
-  box.innerHTML=list.map(p=>'<div class="card item">'+
+  const wkHead=histWeek?(()=>{ const tot=list.reduce((a,p)=>a+(+p.total||0)*toYd(p),0), byS={AM:0,PM:0}; list.forEach(p=>{ if(p.session in byS) byS[p.session]++; });
+    return '<div class="card"><div class="stat-row"><div class="stat"><span class="lbl">Week of '+esc(nice(histWeek))+' to '+esc(nice(addDays(histWeek,6)))+'</span><span class="big">'+fmt(tot)+'<small>yd</small></span></div>'
+      +'<div class="stat"><span class="lbl">Practices</span><span class="big">'+list.length+'</span></div></div>'
+      +(histAth?'<div class="note">Zones, strokes and targets for this week are on the <a href="#" id="h-to-week">Week tab</a>.</div>':'')+'</div>'; })():"";
+  box.innerHTML=wkHead+list.map(p=>'<div class="card item">'+
     '<div class="item-top"><span><strong>'+fmt(p.total*toYd(p))+' yd</strong> <span class="meta">'+esc(nice(p.date))+' '+esc(p.session)+' · '+esc(names(p.athleteIds))+(asSwum(p)?' · swum as '+esc(asSwum(p)):'')+'</span></span>'+
     '<span class="actions">'+(canWrite?(confirmDel===p.id?'<span class="meta">Delete this practice?</span><button class="btn danger" data-del="'+esc(p.id)+'">Delete</button><button class="btn ghost" data-keep="1">Keep</button>':'<button class="btn ghost" data-edit="'+esc(p.id)+'">Edit</button><button class="btn ghost" data-ask="'+esc(p.id)+'">Delete</button>'):"")+'</span></div>'+
     zoneBar(p.zones||{},p.total,true)+
@@ -1935,11 +1951,13 @@ function renderHistory(){
     '<div class="meta">'+STROKES.filter(s=>p.strokes&&p.strokes[s]).map(s=>s+" "+fmt(p.strokes[s]*f)).join(" · ")+' · Kick '+fmt((p.kick||0)*f)+(p.dolphin?' (dolphin '+fmt(p.dolphin*f)+')':"")+' · Pull '+fmt((p.pull||0)*f)+(p.pullArms?' (arms only '+fmt(p.pullArms*f)+')':"")+(p.resist?' · Resistance '+fmt(p.resist*f):"")+'</div>')(toYd(p))+
     (p.notes?'<div>'+esc(p.notes)+'</div>':"")+'</div>').join("");
   box.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>editPractice(b.dataset.edit));
+  const tw=$("#h-to-week"); if(tw) tw.onclick=e=>{ e.preventDefault(); weekAth=histAth; weekOf=histWeek; setTab("week"); };
   box.querySelectorAll("[data-ask]").forEach(b=>b.onclick=()=>{confirmDel=b.dataset.ask;renderHistory();});
   box.querySelectorAll("[data-keep]").forEach(b=>b.onclick=()=>{confirmDel="";renderHistory();});
   box.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{b.disabled=true;try{await db.collection("practices").doc(b.dataset.del).delete();confirmDel="";toast("Practice deleted");}catch(e){toast(dbMsg(e));b.disabled=false;}});
 }
 $("#h-ath").onchange=e=>{histAth=e.target.value;renderHistory();};
+$("#h-week").onchange=e=>{histWeek=e.target.value;renderHistory();};
 function editPractice(id){
   const p=practices.find(x=>x.id===id); if(!p) return;
   form={id:p.id,date:p.date,session:p.session||"AM",course:p.course||"SCY",athleteIds:(p.athleteIds||[]).slice(),mode:"totals",
@@ -1948,7 +1966,7 @@ function editPractice(id){
   setTab("log"); renderForm();
 }
 function exportRows(){
-  const list=practices.filter(p=>!histAth||(p.athleteIds||[]).includes(histAth)).slice().sort((a,b)=>(a.date+a.session).localeCompare(b.date+b.session));
+  const list=histList().slice().sort((a,b)=>(a.date+a.session).localeCompare(b.date+b.session));
   const head=["Date","Session","Course","Athletes","Total (yd)"].concat(ZONES.map(z=>z+" yd"),STROKES.map(x=>x+" yd"),["Kick yd","Dolphin kick yd","Pull (all pad work) yd","Arms-only pull yd","Resistance / power yd","As swum","Notes"]);
   const rows=list.map(p=>{ const f=toYd(p), R=v=>Math.round((+v||0)*f); return [p.date,p.session,p.course||"SCY",names(p.athleteIds),R(p.total)].concat(ZONES.map(z=>R(p.zones&&p.zones[z])),STROKES.map(x=>R(p.strokes&&p.strokes[x])),[R(p.kick),R(p.dolphin),R(p.pull),R(p.pullArms),R(p.resist),asSwum(p)||fmt(p.total*f)+" yd "+(p.course||"SCY"),p.notes||""]); });
   return {head,rows,list};
@@ -1988,7 +2006,7 @@ $("#export").onclick=async()=>{
     X.utils.book_append_sheet(wb,ws2,"Practices");
     const out=X.write(wb,{bookType:"xlsx",type:"array"});
     const who=histAth?names([histAth]).replace(/[^A-Za-z0-9]+/g,"-")+"-":"";
-    const ok=await saveFile("SURGE-practice-log-"+who+iso(new Date())+".xlsx",new Blob([out],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
+    const ok=await saveFile("SURGE-practice-log-"+who+(histWeek?"week-of-"+histWeek:iso(new Date()))+".xlsx",new Blob([out],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
     if(!ok) throw {code:"save_failed"};
   }catch(e){
     if(!(e&&e.code==="declined")){ $("#csv-text").value=csvText(P.head,P.rows); $("#csv-fallback").hidden=false; toast("Couldn't save the Excel file, so the table is below to copy"); }

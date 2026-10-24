@@ -2009,8 +2009,11 @@ const ZHEX={REC:"#CFD9DE",EN1:"#EE9BBB",EN2:"#D2423F",EN3:"#7A57C2",SP1:"#2E3F9E
 $("#wk-pdf").onclick=async()=>{
   const R=weekReport(); if(!R){ toast("Pick an athlete first"); return; }
   const btn=$("#wk-pdf"); btn.disabled=true; btn.textContent="Preparing…";
+  // open the tab right away (browsers only allow it straight from the tap), then show the PDF in it to view, print or save
+  let win=null; try{ win=window.open("","_blank"); if(win) win.document.write('<title>Making the PDF…</title><p style="font:16px system-ui,sans-serif;padding:24px;color:#13294B">Making the PDF…</p>'); }catch(e){ win=null; }
   try{
     const jsPDF=await loadPdfLib(), doc=new jsPDF({unit:"pt",format:"letter"});
+    doc.setProperties({title:fileStem(R),subject:"SURGE week report",creator:"SURGE Practice Log"});
     const NAVY="#1C4E9B", DEEP="#13294B", RED="#C8323F", GRAY="#566B74", LIGHT="#EEF2F5", LINE="#D3DEE2";
     const W=doc.internal.pageSize.getWidth(), M=40; let y=40;
     const txt=(s,x,yy,o)=>doc.text(String(s),x,yy,o||{});
@@ -2061,9 +2064,22 @@ $("#wk-pdf").onclick=async()=>{
     const n=doc.internal.getNumberOfPages();
     for(let i=1;i<=n;i++){ doc.setPage(i); doc.setFont("helvetica","normal"); doc.setFontSize(7.5); doc.setTextColor(GRAY);
       const H=doc.internal.pageSize.getHeight(); txt("SURGE Practice Log · "+R.a.name+" · week of "+nice(R.start)+" · made "+niceLong(iso(new Date())),M,H-20); txt("Page "+i+" of "+n,W-M,H-20,{align:"right"}); }
-    const ok=await saveFile(fileStem(R)+".pdf",doc.output("blob"));
-    if(!ok) throw {code:"save_failed"};
-  }catch(e){ if(!(e&&e.code==="declined")) toast("Couldn't make the PDF. Check your connection and try again."); }
+    const blob=doc.output("blob");
+    if(win&&!win.closed){
+      // a small viewer page: the PDF, with a Save button that keeps the file name
+      const url=URL.createObjectURL(blob), file=fileStem(R)+".pdf", ttl=R.a.name+" · week of "+nice(R.start);
+      win.document.open();
+      win.document.write('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+esc(ttl)+'</title>'
+        +'<style>html,body{margin:0;height:100%;background:#EEF2F5;font:600 15px/1.2 system-ui,-apple-system,sans-serif}.bar{display:flex;gap:10px;align-items:center;padding:10px 14px;background:#13294B;color:#fff;border-bottom:4px solid #C8323F}'
+        +'.bar span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bar a{background:#fff;color:#13294B;border-radius:8px;padding:9px 16px;text-decoration:none;white-space:nowrap}'
+        +'iframe{display:block;border:0;width:100%;height:calc(100% - 60px);background:#fff}</style></head><body>'
+        +'<div class="bar"><span>'+esc(ttl)+'</span><a href="'+url+'" download="'+esc(file)+'">Save PDF</a></div>'
+        +'<iframe src="'+url+'" title="'+esc(ttl)+'"></iframe></body></html>');
+      win.document.close();
+      setTimeout(()=>URL.revokeObjectURL(url),30*60*1000);
+    }
+    else { const ok=await saveFile(fileStem(R)+".pdf",blob); if(!ok) throw {code:"save_failed"}; }
+  }catch(e){ try{ if(win&&!win.closed) win.close(); }catch(_){} if(!(e&&e.code==="declined")) toast("Couldn't make the PDF. Check your connection and try again."); }
   btn.disabled=false; btn.textContent="Week to PDF";
 };
 $("#wk-ath").onchange=e=>{weekAth=e.target.value;sendArm="";renderWeek();};

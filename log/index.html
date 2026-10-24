@@ -313,6 +313,7 @@ nav.tabs button{display:inline-flex;align-items:center;gap:6px}
       <div class="row">
         <div class="field"><label for="wk-ath">Athlete</label><select id="wk-ath"></select></div>
         <div class="wk-nav"><button class="btn" id="wk-prev" aria-label="Previous week">‹</button><button class="btn" id="wk-today">This week</button><button class="btn" id="wk-next" aria-label="Next week">›</button></div>
+        <div class="wk-nav"><button class="btn" id="wk-xlsx">Week to Excel</button><button class="btn" id="wk-pdf">Week to PDF</button></div>
       </div>
     </div>
     <div class="ath-banner" id="wk-name" hidden></div>
@@ -1885,6 +1886,7 @@ function renderWeek(){
   if(!athletes.length){ athBanner("#wk-name",null);body.innerHTML='<div class="empty"><strong>No athletes yet</strong>Add an athlete, then log a practice to see the week here.</div>';return;}
   const a=athletes.find(x=>x.id===weekAth); const g=a.group in GROUPS?a.group:"distance";
   athBanner("#wk-name",a);
+  { const has=practices.some(p=>Array.isArray(p.athleteIds)&&p.athleteIds.includes(a.id)); $("#wk-xlsx").disabled=!has; $("#wk-pdf").disabled=!has; }
   const link=planFor(a), pw=link&&link.plan?planWeekFor(link.plan,weekOf):null;
   // With a SURGE plan, the week follows SURGE's own week dates.
   const start=pw?pw.date:weekOf, end=addDays(start,6);
@@ -1930,6 +1932,140 @@ function renderWeek(){
   const cb=$("#copy-total"); if(cb) cb.onclick=()=>copyText(String(Math.round(w.total)),"Total copied");
   if(pw) wirePlanCard(a,link,pw,w.total);
 }
+/* ---------- export the week: Excel and PDF ---------- */
+const stTxt=(actual,target,lo,hi)=>{ if(lo==null){const tol=Math.max(1.5,target*0.2); lo=target-tol; hi=target+tol;} return actual<lo-1e-9?"Low":actual>hi+1e-9?"High":"OK"; };
+// Everything the Week page shows, as numbers (same math as the page).
+function weekReport(){
+  const a=athletes.find(x=>x.id===weekAth); if(!a) return null;
+  const g=a.group in GROUPS?a.group:"distance";
+  const link=planFor(a), pw=link&&link.plan?planWeekFor(link.plan,weekOf):null;
+  const start=pw?pw.date:weekOf, end=addDays(start,6);
+  const ps=practices.filter(p=>Array.isArray(p.athleteIds)&&p.athleteIds.includes(a.id)&&p.date>=start&&p.date<=end).sort((x,y)=>(x.date+x.session).localeCompare(y.date+y.session));
+  const w=emptyTotals();
+  ps.forEach(p=>{const f=toYd(p);w.total+=(+p.total||0)*f;w.kick+=(+p.kick||0)*f;w.pull+=(+p.pull||0)*f;w.dolphin+=(+p.dolphin||0)*f;w.pullArms+=(+p.pullArms||0)*f;w.resist+=(+p.resist||0)*f;ZONES.forEach(z=>w.zones[z]+=(+(p.zones&&p.zones[z])||0)*f);STROKES.forEach(s=>w.strokes[s]+=(+(p.strokes&&p.strokes[s])||0)*f);});
+  const zt=pw&&pw.volume>0?ZONES.map(z=>(+(pw.zones&&pw.zones[z])||0)/pw.volume*100):ZT[g], st=ST[g], dr=DOL[g], arms=ARMS[g];
+  const zones=ZONES.map((z,i)=>{const ap=pct(w.zones[z],w.total);return {name:z,yd:w.zones[z],actual:ap,target:p1(zt[i])+"%",status:w.total?stTxt(ap,zt[i]):""};});
+  const strokes=STROKES.map(s=>{const ap=pct(w.strokes[s],w.total),r=st[s];return {name:s+(s==="Prime"&&a.prime?" ("+a.prime+")":""),yd:w.strokes[s],actual:ap,target:p1(r[1])+"-"+p1(r[2])+"%",status:w.total?stTxt(ap,r[0],r[1],r[2]):""};});
+  const kp=[["Kick",w.kick,st.kick],["Pull (all pad work)",w.pull,st.pull]].map(([n,y,r])=>{const ap=pct(y,w.total);return {name:n,yd:y,actual:ap,target:p1(r[1])+"-"+p1(r[2])+"%",status:w.total?stTxt(ap,r[0],r[1],r[2]):""};});
+  kp.push({name:"Dolphin kick (of kick)",yd:w.dolphin,actual:w.kick?pct(w.dolphin,w.kick):null,target:dr[0]+"-"+dr[1]+"%",status:w.kick?stTxt(pct(w.dolphin,w.kick),(dr[0]+dr[1])/2,dr[0],dr[1]):"No kick"});
+  kp.push({name:"Arms-only pull",yd:w.pullArms,actual:pct(w.pullArms,w.total),target:"up to "+arms+"%",status:w.total?(pct(w.pullArms,w.total)>arms+1e-9?"High":"OK"):""});
+  kp.push({name:"Resistance / power",yd:w.resist,actual:pct(w.resist,w.total),target:"-",status:"No target"});
+  let plan=null;
+  if(pw){
+    const planned=+pw.volume||0, L=(p,d)=>Math.max(0,p-d), kickT=planned*st.kick[0]/100;
+    plan={name:planLabel(link.key),weekNum:pw.weekNum,label:pw.label||pw.phase||"",planned,done:w.total,left:L(planned,w.total),
+      zones:ZONES.map(z=>{const p=+(pw.zones&&pw.zones[z])||0;return {name:z,planned:p,done:w.zones[z],left:L(p,w.zones[z])};}),
+      parts:STROKES.map(s=>({name:s,planned:planned*st[s][0]/100,done:w.strokes[s]})).concat([{name:"Kick",planned:kickT,done:w.kick},{name:"Dolphin kick",planned:kickT*(dr[0]+dr[1])/200,done:w.dolphin},{name:"Pull (all pad work)",planned:planned*st.pull[0]/100,done:w.pull}]).map(x=>Object.assign(x,{left:L(x.planned,x.done)}))};
+  }
+  const pr=ps.map(p=>{const f=toYd(p), R=v=>Math.round((+v||0)*f);
+    return {date:p.date,session:p.session||"",course:p.course||"SCY",yd:R(p.total),swum:asSwum(p),
+      zones:ZONES.filter(z=>p.zones&&+p.zones[z]).map(z=>z+" "+fmt(R(p.zones[z]))).join(", "),
+      strokes:STROKES.filter(s=>p.strokes&&+p.strokes[s]).map(s=>s+" "+fmt(R(p.strokes[s]))).join(", "),
+      kp:"Kick "+fmt(R(p.kick))+(p.dolphin?" (dolphin "+fmt(R(p.dolphin))+")":"")+", Pull "+fmt(R(p.pull))+(p.pullArms?" (arms only "+fmt(R(p.pullArms))+")":"")+(p.resist?", Resistance "+fmt(R(p.resist)):""),
+      notes:p.notes||"",raw:p};});
+  return {a,g,start,end,ps,pr,w,zones,strokes,kp,plan,custom:!!tgCustom[g],anyM:ps.some(p=>unitOf(p.course)==="m")};
+}
+const fileStem=R=>"SURGE-week-"+R.a.name.replace(/[^A-Za-z0-9]+/g,"-").replace(/^-|-$/g,"")+"-"+R.start;
+const weekRange=R=>nice(R.start)+" to "+nice(R.end)+", "+R.end.slice(0,4);
+$("#wk-xlsx").onclick=async()=>{
+  const R=weekReport(); if(!R){ toast("Pick an athlete first"); return; }
+  const btn=$("#wk-xlsx"); btn.disabled=true; btn.textContent="Preparing…";
+  try{
+    const X=await loadXlsx(), wb=X.utils.book_new(), rows=[], pcts=[];
+    const add=(r,pctCols)=>{ rows.push(r); if(pctCols) pctCols.forEach(c=>pcts.push([rows.length-1,c])); };
+    add([R.a.name.toUpperCase()]);
+    add([GROUPS[R.g]+(R.a.prime?" · Prime "+R.a.prime:"")]);
+    add(["Week of "+weekRange(R)]);
+    add([]);
+    add(["Week total (yd)",Math.round(R.w.total)]); add(["Practices",R.ps.length]);
+    if(R.plan){ add(["SURGE plan",R.plan.name+" · Week "+R.plan.weekNum+(R.plan.label?" · "+R.plan.label:"")]); add(["Planned (yd)",Math.round(R.plan.planned)]); add([R.w.total>R.plan.planned?"Over plan (yd)":"Left (yd)",Math.round(Math.abs(R.plan.planned-R.w.total))]); }
+    const table=(title,list,dolRow)=>{ add([]); add([title,"Yards","Actual","Target","Status"]);
+      list.forEach(x=>add([x.name,Math.round(x.yd),x.actual==null?"-":x.actual/100,x.target,x.status],x.actual==null?null:[2])); };
+    table("Energy zones",R.zones); table("Strokes",R.strokes); table("Kick, pull and resistance",R.kp);
+    if(R.plan){ add([]); add(["SURGE plan this week","Planned","Done","Left"]);
+      add(["Total",Math.round(R.plan.planned),Math.round(R.plan.done),Math.round(R.plan.left)]);
+      R.plan.zones.concat(R.plan.parts).forEach(x=>add([x.name,Math.round(x.planned),Math.round(x.done),Math.round(x.left)])); }
+    add([]); add(["Targets are "+(R.custom?"your targets":"the Weekly Volume Mix")+" for "+GROUPS[R.g]+". Zone targets are "+(R.plan?"this week's SURGE plan":"the SURGE profile for the group")+"."+(R.anyM?" Meters are converted to yards (1 m = 1.0936 yd).":"")]);
+    const ws=X.utils.aoa_to_sheet(rows);
+    pcts.forEach(([r,c])=>{ const ref=X.utils.encode_cell({r,c}); if(ws[ref]) ws[ref].z="0.0%"; });
+    ws["!cols"]=[{wch:28},{wch:12},{wch:10},{wch:12},{wch:10}];
+    X.utils.book_append_sheet(wb,ws,"Week");
+    const head=["Date","Session","Course","Total (yd)","As swum","Zones (yd)","Strokes (yd)","Kick and pull (yd)","Notes"];
+    const ws2=X.utils.aoa_to_sheet([head].concat(R.pr.map(p=>[p.date,p.session,p.course,p.yd,p.swum,p.zones,p.strokes,p.kp,p.notes])));
+    ws2["!cols"]=[{wch:11},{wch:8},{wch:7},{wch:10},{wch:12},{wch:40},{wch:36},{wch:40},{wch:40}];
+    X.utils.book_append_sheet(wb,ws2,"Practices");
+    const out=X.write(wb,{bookType:"xlsx",type:"array"});
+    const ok=await saveFile(fileStem(R)+".xlsx",new Blob([out],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
+    if(!ok) throw {code:"save_failed"};
+  }catch(e){ if(!(e&&e.code==="declined")) toast("Couldn't make the Excel file. Check your connection and try again."); }
+  btn.disabled=false; btn.textContent="Week to Excel";
+};
+let pdfLibReady=null;
+function loadPdfLib(){
+  if(!pdfLibReady){ pdfLibReady=loadScript("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js").then(()=>loadScript("https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js")).then(()=>{ if(!window.jspdf||!window.jspdf.jsPDF) throw new Error("pdf"); return window.jspdf.jsPDF; }); pdfLibReady.catch(()=>{pdfLibReady=null;}); }
+  return pdfLibReady;
+}
+const ZHEX={REC:"#CFD9DE",EN1:"#EE9BBB",EN2:"#D2423F",EN3:"#7A57C2",SP1:"#2E3F9E",SP2:"#2F9A62",SP3:"#E3B21C"};
+$("#wk-pdf").onclick=async()=>{
+  const R=weekReport(); if(!R){ toast("Pick an athlete first"); return; }
+  const btn=$("#wk-pdf"); btn.disabled=true; btn.textContent="Preparing…";
+  try{
+    const jsPDF=await loadPdfLib(), doc=new jsPDF({unit:"pt",format:"letter"});
+    const NAVY="#1C4E9B", DEEP="#13294B", RED="#C8323F", GRAY="#566B74", LIGHT="#EEF2F5", LINE="#D3DEE2";
+    const W=doc.internal.pageSize.getWidth(), M=40; let y=40;
+    const txt=(s,x,yy,o)=>doc.text(String(s),x,yy,o||{});
+    doc.setFont("helvetica","bold"); doc.setFontSize(9); doc.setTextColor(NAVY); doc.setCharSpace(1.2);
+    txt("SURGE · TSM AQUATICS",M,y); txt("WEEK REPORT",W-M,y,{align:"right"}); doc.setCharSpace(0);
+    // the name, big and centered
+    y+=50; doc.setFontSize(40); doc.setTextColor(DEEP);
+    const nm=R.a.name.toUpperCase(); let fs=40; while(doc.getTextWidth(nm)>W-2*M&&fs>20){ fs-=2; doc.setFontSize(fs); }
+    txt(nm,W/2,y,{align:"center"});
+    // red and navy stripe
+    y+=14; const sw=180, seg=12, gapw=3; let sx=W/2-sw/2, k=0;
+    while(sx<W/2+sw/2-1){ doc.setFillColor(k%2?NAVY:RED); doc.roundedRect(sx,y,Math.min(seg,W/2+sw/2-sx),4,1.5,1.5,"F"); sx+=seg+gapw; k++; }
+    y+=20; doc.setFont("helvetica","bold"); doc.setFontSize(9); doc.setTextColor(GRAY); doc.setCharSpace(1);
+    txt((GROUPS[R.g]+(R.a.prime?" · Prime "+R.a.prime:"")).toUpperCase(),W/2,y,{align:"center"}); doc.setCharSpace(0);
+    y+=18; doc.setFontSize(13); doc.setTextColor(DEEP); txt("Week of "+weekRange(R),W/2,y,{align:"center"});
+    // stat boxes
+    y+=16; const stats=[["WEEK TOTAL",fmt(R.w.total)+" yd"],["PRACTICES",String(R.ps.length)]];
+    if(R.plan){ stats.push(["PLANNED",fmt(R.plan.planned)+" yd"]); stats.push([R.w.total>R.plan.planned?"OVER PLAN":"LEFT",fmt(Math.abs(R.plan.planned-R.w.total))+" yd"]); }
+    const bw=(W-2*M-(stats.length-1)*10)/stats.length;
+    stats.forEach(([l,v],i)=>{ const bx=M+i*(bw+10); doc.setFillColor(LIGHT); doc.setDrawColor(LINE); doc.roundedRect(bx,y,bw,50,6,6,"FD");
+      doc.setFillColor(i%2?RED:NAVY); doc.rect(bx,y+8,3,34,"F");
+      doc.setFont("helvetica","bold"); doc.setFontSize(8); doc.setTextColor(GRAY); doc.setCharSpace(.8); txt(l,bx+12,y+18); doc.setCharSpace(0);
+      doc.setFontSize(18); doc.setTextColor(DEEP); txt(v,bx+12,y+40); });
+    y+=64;
+    // zone bar and legend
+    if(R.w.total>0){ let bx=M; const bwid=W-2*M;
+      ZONES.forEach(z=>{ const ww=bwid*R.w.zones[z]/R.w.total; if(ww>0){ doc.setFillColor(ZHEX[z]); doc.rect(bx,y,ww,10,"F"); bx+=ww; } });
+      y+=22; let lx=M; doc.setFont("helvetica","normal"); doc.setFontSize(8);
+      ZONES.forEach(z=>{ doc.setFillColor(ZHEX[z]); doc.rect(lx,y-7,8,8,"F"); doc.setTextColor(GRAY); const t=z+" "+p1(pct(R.w.zones[z],R.w.total))+"%"; txt(t,lx+11,y); lx+=doc.getTextWidth(t)+24; });
+      y+=12; }
+    if(R.plan){ doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(GRAY); txt("SURGE plan: "+R.plan.name+" · Week "+R.plan.weekNum+(R.plan.label?" · "+R.plan.label:""),M,y+4); y+=14; }
+    const stColor=s=>s==="High"?[200,50,63]:s==="Low"?[184,121,0]:s==="OK"?[38,128,79]:[86,107,116];
+    const tbl=(title,list,x,width,startY)=>{ doc.autoTable({startY,margin:{left:x,right:W-x-width},tableWidth:width,
+        head:[[title,"Yards","Actual","Target",""]],body:list.map(r=>[r.name,fmt(r.yd),r.actual==null?"-":p1(r.actual)+"%",r.target,r.status]),
+        theme:"grid",styles:{font:"helvetica",fontSize:8.5,cellPadding:4,lineColor:LINE,lineWidth:.5,textColor:DEEP},
+        headStyles:{fillColor:NAVY,textColor:"#FFFFFF",fontStyle:"bold",halign:"right"},columnStyles:{0:{halign:"left",fontStyle:"bold"},1:{halign:"right"},2:{halign:"right"},3:{halign:"right"},4:{halign:"center",fontStyle:"bold"}},
+        alternateRowStyles:{fillColor:LIGHT},
+        didParseCell:d=>{ if(d.section==="head"&&d.column.index===0) d.cell.styles.halign="left"; if(d.section==="body"&&d.column.index===4) d.cell.styles.textColor=stColor(d.cell.raw); } });
+      return doc.lastAutoTable.finalY; };
+    const half=(W-2*M-12)/2;
+    const y1=tbl("Energy zones",R.zones,M,half,y), y2=tbl("Strokes",R.strokes,M+half+12,half,y);
+    y=Math.max(y1,y2)+12;
+    y=tbl("Kick, pull and resistance",R.kp,M,W-2*M,y)+6;
+    doc.setFont("helvetica","normal"); doc.setFontSize(7.5); doc.setTextColor(GRAY);
+    const noteT="Targets are "+(R.custom?"your targets":"the Weekly Volume Mix")+" for "+GROUPS[R.g]+". Zone targets are "+(R.plan?"this week's SURGE plan":"the SURGE profile for the group")+", flagged when more than 20% (at least 1.5 points) away."+(R.anyM?" Meters are converted to yards (1 m = 1.0936 yd).":"");
+    const nl=doc.splitTextToSize(noteT,W-2*M); txt(nl,M,y+6); y+=6+nl.length*9+8;
+    // one sheet: the summary and the three tables only
+    const n=doc.internal.getNumberOfPages();
+    for(let i=1;i<=n;i++){ doc.setPage(i); doc.setFont("helvetica","normal"); doc.setFontSize(7.5); doc.setTextColor(GRAY);
+      const H=doc.internal.pageSize.getHeight(); txt("SURGE Practice Log · "+R.a.name+" · week of "+nice(R.start)+" · made "+niceLong(iso(new Date())),M,H-20); txt("Page "+i+" of "+n,W-M,H-20,{align:"right"}); }
+    const ok=await saveFile(fileStem(R)+".pdf",doc.output("blob"));
+    if(!ok) throw {code:"save_failed"};
+  }catch(e){ if(!(e&&e.code==="declined")) toast("Couldn't make the PDF. Check your connection and try again."); }
+  btn.disabled=false; btn.textContent="Week to PDF";
+};
 $("#wk-ath").onchange=e=>{weekAth=e.target.value;sendArm="";renderWeek();};
 $("#wk-prev").onclick=()=>{weekOf=addDays(weekOf,-7);renderWeek();};
 $("#wk-next").onclick=()=>{weekOf=addDays(weekOf,7);renderWeek();};

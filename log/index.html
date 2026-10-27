@@ -117,6 +117,8 @@ textarea{width:100%;min-height:64px;resize:vertical}
 .tile{display:grid;gap:2px;align-content:start;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);cursor:text;min-width:0}
 #t-zones .tile{border-top:4px solid var(--zc)}
 .tile .tl{font:600 12px/1.25 var(--f-body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.tile.sub{background:var(--sunk);border-left:4px solid var(--accent)}
+tr.sub td:first-child{padding-left:20px;color:var(--muted)}
 .tile input{font:700 26px/1.1 var(--f-display);border:0;padding:0;background:transparent;width:100%;color:var(--ink)}
 .tile input:focus-visible{outline:none}
 .tile:focus-within{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
@@ -293,7 +295,7 @@ nav.tabs button{display:inline-flex;align-items:center;gap:6px}
       <div id="t-zbar"></div>
       <div><h3>Energy zones</h3><div class="tiles" id="t-zones"></div></div>
       <div><h3>Strokes</h3><div class="tiles" id="t-strokes"></div></div>
-      <div><h3>Kick, pull and resistance</h3><div class="tiles" id="t-kp"></div></div>
+      <div><h3>Kick, pull and resistance</h3><div class="tiles" id="t-kp"></div><div class="note" style="margin-top:8px">Pull counts all paddle and buoy work, swimming with paddles included. Arms only is the part of pull done with a buoy or band and no kick, so it's already inside Pull. Dolphin kick is likewise part of Kick.</div></div>
       <details id="sets-read" hidden><summary id="sets-sum">How the workout was read</summary>
         <div class="note" style="margin:8px 0">The boxes above are what gets saved. If something was read wrong, change the number in its box.</div>
         <div class="list" id="sets-list"></div>
@@ -598,7 +600,10 @@ function wireQuickAdd(){
 }
 const shortGroup=g=>({sprint:"Sprint",mid:"Mid",distance:"Distance"}[g]||"");
 
-const KP=[["kick","Kick"],["dolphin","Dolphin kick"],["pull","Pull (all pad work)"],["pullArms","Arms-only pull (buoy / band)"],["resist","Resistance / power (chutes, socks, towers)"]];
+// Pull is ALL paddle and buoy work. Arms only is the part of that pull done with a buoy or band and no kick
+// (swimming with paddles is pull, but not arms only). Dolphin kick is the part of kick done as dolphin.
+const PULL_L="Pull (all paddle and buoy work)", ARMS_L="Arms only (part of pull)", DOL_L="Dolphin kick (part of kick)";
+const KP=[["kick","Kick"],["dolphin",DOL_L,"kick"],["pull",PULL_L],["pullArms",ARMS_L,"pull"],["resist","Resistance / power (chutes, socks, towers)"]];
 const TYPE_LABEL={swim:"swim",kick:"kick",pull:"pull"};
 function boxIn(id,val){const v=(val===""||val==null||+val===0)?"":Math.round(+val*10)/10;return '<input type="number" inputmode="numeric" min="0" step="25" id="'+id+'" value="'+esc(v)+'" placeholder="0">';}
 function primeNote(){ if(form.athleteIds.length!==1) return ""; const a=athletes.find(x=>x.id===form.athleteIds[0]); return a&&a.prime?' ('+esc(a.prime)+')':""; }
@@ -607,7 +612,7 @@ function renderSummary(){
   $("#t-total").value=(T.total===""||T.total==null||+T.total===0)?"":T.total;
   $("#t-zones").innerHTML=ZONES.map(z=>'<label class="tile" for="t-z-'+z+'" style="--zc:'+zc(z)+'"><span class="tl">'+z+'</span>'+boxIn("t-z-"+z,T.zones[z])+'<span class="pc" id="pc-z-'+z+'"></span></label>').join("");
   $("#t-strokes").innerHTML=STROKES.map(st=>'<label class="tile" for="t-s-'+st+'"><span class="tl">'+st+(st==="Prime"?primeNote():"")+'</span>'+boxIn("t-s-"+st,T.strokes[st])+'<span class="pc" id="pc-s-'+st+'"></span></label>').join("");
-  $("#t-kp").innerHTML=KP.map(([k,l])=>'<label class="tile" for="t-'+k+'"><span class="tl">'+l+'</span>'+boxIn("t-"+k,T[k])+'<span class="pc" id="pc-'+k+'"></span></label>').join("");
+  $("#t-kp").innerHTML=KP.map(([k,l,parent])=>'<label class="tile'+(parent?' sub':'')+'" for="t-'+k+'"><span class="tl">'+(parent?'↳ ':'')+l+'</span>'+boxIn("t-"+k,T[k])+'<span class="pc" id="pc-'+k+'"></span></label>').join("");
   ZONES.forEach(z=>{$("#t-z-"+z).oninput=e=>{T.zones[z]=e.target.value;saveDraft();updateSummary();};});
   STROKES.forEach(st=>{$("#t-s-"+st).oninput=e=>{T.strokes[st]=e.target.value;saveDraft();updateSummary();};});
   KP.forEach(([k])=>{$("#t-"+k).oninput=e=>{T[k]=e.target.value;saveDraft();updateSummary();};});
@@ -629,14 +634,14 @@ function updateSummary(){
   put("pc-kick",t.total?p1(pct(t.kick,t.total))+"% of total":"");
   put("pc-dolphin",t.kick?p1(pct(t.dolphin,t.kick))+"% of kick":"");
   put("pc-pull",t.total?p1(pct(t.pull,t.total))+"% of total":"");
-  put("pc-pullArms",t.total?p1(pct(t.pullArms,t.total))+"% of total":"");
+  put("pc-pullArms",t.pull?p1(pct(t.pullArms,t.pull))+"% of pull":"");
   put("pc-resist",t.total?p1(pct(t.resist,t.total))+"% of total":"");
   put("sb-total",t.total?fmt(t.total)+" "+u+(u==="m"?" ("+fmt(t.total*M2Y)+" yd)":"")+(form.athleteIds.length?" · "+form.athleteIds.length+" athlete"+(form.athleteIds.length>1?"s":""):" · pick an athlete"):"Nothing to save yet");
   $("#t-zbar").innerHTML=t.total?zoneBar(t.zones,t.total)+legend:"";
   $("#sum-checks").innerHTML=t.total
     ?'<div class="line"><span>Zones add up to '+fmt(zs)+' '+u+'</span>'+checkPill(zs,t.total)+'</div><div class="line"><span>Strokes add up to '+fmt(ss)+' '+u+'</span>'+checkPill(ss,t.total)+'</div>'
-      +(t.dolphin>t.kick?'<div class="line"><span>Dolphin kick is more than all kick</span><span class="pill high">Check</span></div>':"")
-      +(t.pullArms>t.pull?'<div class="line"><span>Arms-only pull is more than all pull</span><span class="pill high">Check</span></div>':"")
+      +(t.dolphin>t.kick?'<div class="line"><span>Dolphin kick is more than all kick (it is part of kick)</span><span class="pill high">Check</span></div>':"")
+      +(t.pullArms>t.pull?'<div class="line"><span>Arms only is more than all pull (it is part of pull)</span><span class="pill high">Check</span></div>':"")
     :'<div class="note">Add a workout above, or type the numbers into the boxes.</div>';
 }
 function renderSetsRead(){
@@ -663,8 +668,8 @@ function renderForm(){
 let glossary=[];
 const MEANS=[
  ["Stroke",[["stroke:Fr","Freestyle (Fr)","free"],["stroke:Bk","Backstroke (Bk)","back"],["stroke:Br","Breaststroke (Br)","breast"],["stroke:Fly","Butterfly (Fly)","fly"],["stroke:IM","IM","im"],["stroke:Prime","Prime stroke","prime"]]],
- ["Type",[["type:swim","Swim","swim"],["type:drill","Drill (counts as swim)","drill"],["type:kick","Kick","kick"],["type:pads","Pull / pad work","pads"]]],
- ["Kick, pull and resistance",[["flag:dolphin","Dolphin kick","dolphin kick"],["flag:arms","Arms-only pull (buoy / band)","buoy pull"],["flag:resist","Resistance / power","resgear"]]],
+ ["Type",[["type:swim","Swim","swim"],["type:drill","Drill (counts as swim)","drill"],["type:kick","Kick","kick"],["type:pads","Pull (paddles or buoy)","pads"]]],
+ ["Kick, pull and resistance",[["flag:dolphin","Dolphin kick","dolphin kick"],["flag:arms","Arms only, part of pull (buoy / band)","buoy pull"],["flag:resist","Resistance / power","resgear"]]],
  ["Energy zone",ZONES.map(z=>["zone:"+z,z,z.toLowerCase()])],
  ["Other",[["skip","Not yardage (skip lines with it)",""],["words","Same as other words",""]]]
 ];
@@ -1833,9 +1838,9 @@ function planCard(a,g,link,pw,w,ps,end0){
   const zRows=ZONES.map(z=>{const p=+(pw.zones&&pw.zones[z])||0,d=w.zones[z],l=L(p,d);return '<tr><td><span class="zlabel"><i class="sw" style="background:'+zc(z)+'"></i>'+z+'</span></td><td>'+fmt(p)+'</td><td>'+fmt(d)+'</td><td>'+(d>p&&p>=0&&d-p>=50?'<span class="over">+'+fmt(d-p)+'</span>':fmt(l))+'</td>'+perCell(l)+'</tr>';}).join("");
   const st=ST[g], kickT=planned*st.kick[0]/100, dr=DOL[g];
   const tgt=[].concat(STROKES.map(s=>[s+(s==="Prime"&&a.prime?' <span class="meta">('+esc(a.prime)+')</span>':""),planned*st[s][0]/100,w.strokes[s]]),
-    [["Kick",kickT,w.kick],["Dolphin kick",kickT*(dr[0]+dr[1])/200,w.dolphin],["Pull (all pad work)",planned*st.pull[0]/100,w.pull]]);
+    [["Kick",kickT,w.kick],["↳ "+DOL_L,kickT*(dr[0]+dr[1])/200,w.dolphin],[PULL_L,planned*st.pull[0]/100,w.pull]]);
   const sRows=tgt.map(([n,p,d])=>{const l=L(p,d);return '<tr><td>'+n+'</td><td>'+fmt(p)+'</td><td>'+fmt(d)+'</td><td>'+(d>p&&d-p>=50?'<span class="over">+'+fmt(d-p)+'</span>':fmt(l))+'</td>'+perCell(l)+'</tr>';}).join("")
-    +(()=>{const cap=planned*ARMS[g]/100,d=w.pullArms;return '<tr><td>Arms-only pull <span class="meta">most</span></td><td>'+fmt(cap)+'</td><td>'+fmt(d)+'</td><td>'+(d>cap?'<span class="over">+'+fmt(d-cap)+'</span>':fmt(cap-d)+' <span class="meta">room</span>')+'</td>'+(per?'<td></td>':'')+'</tr>';})();
+    +(()=>{const cap=planned*ARMS[g]/100,d=w.pullArms;return '<tr class="sub"><td>↳ '+ARMS_L+' <span class="meta">most</span></td><td>'+fmt(cap)+'</td><td>'+fmt(d)+'</td><td>'+(d>cap?'<span class="over">+'+fmt(d-cap)+'</span>':fmt(cap-d)+' <span class="meta">room</span>')+'</td>'+(per?'<td></td>':'')+'</tr>';})();
   const head='<tr><th></th><th>Planned</th><th>Done</th><th>Left</th>'+perHead+'</tr>';
   const sHead='<tr><th></th><th>Target</th><th>Done</th><th>Left</th>'+perHead+'</tr>';
   const today=iso(new Date()), wkEnd=addDays(pw.date,6), over=today>wkEnd;
@@ -1909,9 +1914,11 @@ function renderWeek(){
   const zt=pw&&pw.volume>0?ZONES.map(z=>(+(pw.zones&&pw.zones[z])||0)/pw.volume*100):ZT[g], st=ST[g];
   const zoneRows=ZONES.map((z,i)=>{const ap=pct(w.zones[z],w.total);return '<tr><td><span class="zlabel"><i class="sw" style="background:'+zc(z)+'"></i>'+z+'</span></td><td>'+fmt(w.zones[z])+'</td><td>'+p1(ap)+'%</td><td>'+p1(zt[i])+'%</td><td>'+status(ap,zt[i])+'</td></tr>';}).join("");
   const strokeRows=STROKES.map(s=>{const ap=pct(w.strokes[s],w.total),r=st[s];return '<tr><td>'+s+(s==="Prime"&&a.prime?' <span class="meta">('+esc(a.prime)+')</span>':"")+'</td><td>'+fmt(w.strokes[s])+'</td><td>'+p1(ap)+'%</td><td>'+p1(r[1])+'-'+p1(r[2])+'%</td><td>'+status(ap,r[0],r[1],r[2])+'</td></tr>';}).join("");
-  const kp=[["Kick",w.kick,st.kick],["Pull (all pad work)",w.pull,st.pull]].map(([n,y,r])=>{const ap=pct(y,w.total);return '<tr><td>'+n+'</td><td>'+fmt(y)+'</td><td>'+p1(ap)+'%</td><td>'+p1(r[1])+'-'+p1(r[2])+'%</td><td>'+status(ap,r[0],r[1],r[2])+'</td></tr>';}).join("")
-    +(()=>{const dr=DOL[g], ap=pct(w.dolphin,w.kick); return '<tr><td>Dolphin kick <span class="meta">of kick</span></td><td>'+fmt(w.dolphin)+'</td><td>'+(w.kick?p1(ap)+'%':'-')+'</td><td>'+dr[0]+'-'+dr[1]+'%</td><td>'+(w.kick?status(ap,(dr[0]+dr[1])/2,dr[0],dr[1]):'<span class="pill none">No kick</span>')+'</td></tr>';})()
-    +(()=>{const hi=ARMS[g], ap=pct(w.pullArms,w.total); return '<tr><td>Arms-only pull</td><td>'+fmt(w.pullArms)+'</td><td>'+p1(ap)+'%</td><td>up to '+hi+'%</td><td>'+(ap>hi+1e-9?'<span class="pill high">High</span>':'<span class="pill ok">OK</span>')+'</td></tr>';})()
+  const kpRow=(n,y,r)=>{const ap=pct(y,w.total);return '<tr><td>'+n+'</td><td>'+fmt(y)+'</td><td>'+p1(ap)+'%</td><td>'+p1(r[1])+'-'+p1(r[2])+'%</td><td>'+status(ap,r[0],r[1],r[2])+'</td></tr>';};
+  const kp=kpRow("Kick",w.kick,st.kick)
+    +(()=>{const dr=DOL[g], ap=pct(w.dolphin,w.kick); return '<tr class="sub"><td>↳ Dolphin kick<span class="meta" style="display:block">part of kick · actual is % of kick</span></td><td>'+fmt(w.dolphin)+'</td><td>'+(w.kick?p1(ap)+'%':'-')+'</td><td>'+dr[0]+'-'+dr[1]+'%</td><td>'+(w.kick?status(ap,(dr[0]+dr[1])/2,dr[0],dr[1]):'<span class="pill none">No kick</span>')+'</td></tr>';})()
+    +kpRow('Pull<span class="meta" style="display:block">all paddle and buoy work</span>',w.pull,st.pull)
+    +(()=>{const hi=ARMS[g], ap=pct(w.pullArms,w.total); return '<tr class="sub"><td>↳ Arms only<span class="meta" style="display:block">part of pull'+(w.pull?' · '+p1(pct(w.pullArms,w.pull))+'% of pull':'')+'</span></td><td>'+fmt(w.pullArms)+'</td><td>'+p1(ap)+'%</td><td>up to '+hi+'%</td><td>'+(ap>hi+1e-9?'<span class="pill high">High</span>':'<span class="pill ok">OK</span>')+'</td></tr>';})()
     +'<tr><td>Resistance / power</td><td>'+fmt(w.resist)+'</td><td>'+p1(pct(w.resist,w.total))+'%</td><td>-</td><td><span class="pill none">No target</span></td></tr>';
   const head='<tr><th></th><th>Yards</th><th>Actual</th><th>Target</th><th></th></tr>';
   const gap=(part,label)=>Math.round(part)!==Math.round(w.total)?'<div class="note">'+label+' logged for '+fmt(part)+' of '+fmt(w.total)+' yd. Percentages use the full week total.</div>':"";
@@ -1926,7 +1933,7 @@ function renderWeek(){
    '<div class="three">'+
      '<div class="card"><h3>Energy zones</h3><div class="tbl-wrap"><table>'+head+zoneRows+'</table></div>'+gap(zsum,"Zones")+'</div>'+
      '<div class="card"><h3>Strokes</h3><div class="tbl-wrap"><table>'+head+strokeRows+'</table></div>'+gap(ssum,"Strokes")+'</div>'+
-     '<div class="card"><h3>Kick, pull and resistance</h3><div class="tbl-wrap"><table>'+head+kp+'</table></div><div class="note">'+(anyM?"Meters are converted to yards (1 m = 1.0936 yd) so short course and long course weeks add up. ":"")+'OK means within target. Zone targets are '+(pw?'this week\'s SURGE plan':'the SURGE profile for the group')+', flagged when more than 20% (at least 1.5 points) away. Stroke, kick and pull use the Weekly Volume Mix ranges.</div></div>'+
+     '<div class="card"><h3>Kick, pull and resistance</h3><div class="tbl-wrap"><table>'+head+kp+'</table></div><div class="note">'+(anyM?"Meters are converted to yards (1 m = 1.0936 yd) so short course and long course weeks add up. ":"")+'Arms only and dolphin kick are parts of Pull and Kick, not extra yards. OK means within target. Zone targets are '+(pw?'this week\'s SURGE plan':'the SURGE profile for the group')+', flagged when more than 20% (at least 1.5 points) away. Stroke, kick and pull use the Weekly Volume Mix ranges.</div></div>'+
    '</div>'+
    '<div class="card"><h3>Practices this week</h3><div class="list">'+ps.map(p=>'<div class="item"><div class="item-top"><span><strong>'+fmt(p.total*toYd(p))+' yd</strong> <span class="meta">'+esc(nice(p.date))+' '+esc(p.session)+'</span></span><span class="meta">Kick '+fmt((p.kick||0)*toYd(p))+' · Pull '+fmt((p.pull||0)*toYd(p))+'</span></div>'+zoneBar(p.zones||{},p.total,true)+(p.notes?'<div class="meta">'+esc(p.notes)+'</div>':"")+'</div>').join("")+'</div></div>';
   const cb=$("#copy-total"); if(cb) cb.onclick=()=>copyText(String(Math.round(w.total)),"Total copied");
@@ -1946,22 +1953,24 @@ function weekReport(){
   const zt=pw&&pw.volume>0?ZONES.map(z=>(+(pw.zones&&pw.zones[z])||0)/pw.volume*100):ZT[g], st=ST[g], dr=DOL[g], arms=ARMS[g];
   const zones=ZONES.map((z,i)=>{const ap=pct(w.zones[z],w.total);return {name:z,yd:w.zones[z],actual:ap,target:p1(zt[i])+"%",status:w.total?stTxt(ap,zt[i]):""};});
   const strokes=STROKES.map(s=>{const ap=pct(w.strokes[s],w.total),r=st[s];return {name:s+(s==="Prime"&&a.prime?" ("+a.prime+")":""),yd:w.strokes[s],actual:ap,target:p1(r[1])+"-"+p1(r[2])+"%",status:w.total?stTxt(ap,r[0],r[1],r[2]):""};});
-  const kp=[["Kick",w.kick,st.kick],["Pull (all pad work)",w.pull,st.pull]].map(([n,y,r])=>{const ap=pct(y,w.total);return {name:n,yd:y,actual:ap,target:p1(r[1])+"-"+p1(r[2])+"%",status:w.total?stTxt(ap,r[0],r[1],r[2]):""};});
-  kp.push({name:"Dolphin kick (of kick)",yd:w.dolphin,actual:w.kick?pct(w.dolphin,w.kick):null,target:dr[0]+"-"+dr[1]+"%",status:w.kick?stTxt(pct(w.dolphin,w.kick),(dr[0]+dr[1])/2,dr[0],dr[1]):"No kick"});
-  kp.push({name:"Arms-only pull",yd:w.pullArms,actual:pct(w.pullArms,w.total),target:"up to "+arms+"%",status:w.total?(pct(w.pullArms,w.total)>arms+1e-9?"High":"OK"):""});
+  const kpR=(n,y,r)=>{const ap=pct(y,w.total);return {name:n,yd:y,actual:ap,target:p1(r[1])+"-"+p1(r[2])+"%",status:w.total?stTxt(ap,r[0],r[1],r[2]):""};};
+  const kp=[kpR("Kick",w.kick,st.kick)];
+  kp.push({name:"   "+DOL_L+", % of kick",sub:true,yd:w.dolphin,actual:w.kick?pct(w.dolphin,w.kick):null,target:dr[0]+"-"+dr[1]+"%",status:w.kick?stTxt(pct(w.dolphin,w.kick),(dr[0]+dr[1])/2,dr[0],dr[1]):"No kick"});
+  kp.push(kpR(PULL_L,w.pull,st.pull));
+  kp.push({name:"   "+ARMS_L,sub:true,yd:w.pullArms,actual:pct(w.pullArms,w.total),target:"up to "+arms+"%",status:w.total?(pct(w.pullArms,w.total)>arms+1e-9?"High":"OK"):""});
   kp.push({name:"Resistance / power",yd:w.resist,actual:pct(w.resist,w.total),target:"-",status:"No target"});
   let plan=null;
   if(pw){
     const planned=+pw.volume||0, L=(p,d)=>Math.max(0,p-d), kickT=planned*st.kick[0]/100;
     plan={name:planLabel(link.key),weekNum:pw.weekNum,label:pw.label||pw.phase||"",planned,done:w.total,left:L(planned,w.total),
       zones:ZONES.map(z=>{const p=+(pw.zones&&pw.zones[z])||0;return {name:z,planned:p,done:w.zones[z],left:L(p,w.zones[z])};}),
-      parts:STROKES.map(s=>({name:s,planned:planned*st[s][0]/100,done:w.strokes[s]})).concat([{name:"Kick",planned:kickT,done:w.kick},{name:"Dolphin kick",planned:kickT*(dr[0]+dr[1])/200,done:w.dolphin},{name:"Pull (all pad work)",planned:planned*st.pull[0]/100,done:w.pull}]).map(x=>Object.assign(x,{left:L(x.planned,x.done)}))};
+      parts:STROKES.map(s=>({name:s,planned:planned*st[s][0]/100,done:w.strokes[s]})).concat([{name:"Kick",planned:kickT,done:w.kick},{name:DOL_L,planned:kickT*(dr[0]+dr[1])/200,done:w.dolphin},{name:PULL_L,planned:planned*st.pull[0]/100,done:w.pull}]).map(x=>Object.assign(x,{left:L(x.planned,x.done)}))};
   }
   const pr=ps.map(p=>{const f=toYd(p), R=v=>Math.round((+v||0)*f);
     return {date:p.date,session:p.session||"",course:p.course||"SCY",yd:R(p.total),swum:asSwum(p),
       zones:ZONES.filter(z=>p.zones&&+p.zones[z]).map(z=>z+" "+fmt(R(p.zones[z]))).join(", "),
       strokes:STROKES.filter(s=>p.strokes&&+p.strokes[s]).map(s=>s+" "+fmt(R(p.strokes[s]))).join(", "),
-      kp:"Kick "+fmt(R(p.kick))+(p.dolphin?" (dolphin "+fmt(R(p.dolphin))+")":"")+", Pull "+fmt(R(p.pull))+(p.pullArms?" (arms only "+fmt(R(p.pullArms))+")":"")+(p.resist?", Resistance "+fmt(R(p.resist)):""),
+      kp:"Kick "+fmt(R(p.kick))+(p.dolphin?" (dolphin "+fmt(R(p.dolphin))+")":"")+", Pull "+fmt(R(p.pull))+(p.pullArms?" (of it arms only "+fmt(R(p.pullArms))+")":"")+(p.resist?", Resistance "+fmt(R(p.resist)):""),
       notes:p.notes||"",raw:p};});
   return {a,g,start,end,ps,pr,w,zones,strokes,kp,plan,custom:!!tgCustom[g],anyM:ps.some(p=>unitOf(p.course)==="m")};
 }
@@ -2047,11 +2056,12 @@ $("#wk-pdf").onclick=async()=>{
     if(R.plan){ doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(GRAY); txt("SURGE plan: "+R.plan.name+" · Week "+R.plan.weekNum+(R.plan.label?" · "+R.plan.label:""),M,y+4); y+=14; }
     const stColor=s=>s==="High"?[200,50,63]:s==="Low"?[184,121,0]:s==="OK"?[38,128,79]:[86,107,116];
     const tbl=(title,list,x,width,startY)=>{ doc.autoTable({startY,margin:{left:x,right:W-x-width},tableWidth:width,
-        head:[[title,"Yards","Actual","Target",""]],body:list.map(r=>[r.name,fmt(r.yd),r.actual==null?"-":p1(r.actual)+"%",r.target,r.status]),
+        head:[[title,"Yards","Actual","Target",""]],body:list.map(r=>[r.name.trim(),fmt(r.yd),r.actual==null?"-":p1(r.actual)+"%",r.target,r.status]),
         theme:"grid",styles:{font:"helvetica",fontSize:8.5,cellPadding:4,lineColor:LINE,lineWidth:.5,textColor:DEEP},
         headStyles:{fillColor:NAVY,textColor:"#FFFFFF",fontStyle:"bold",halign:"right"},columnStyles:{0:{halign:"left",fontStyle:"bold"},1:{halign:"right"},2:{halign:"right"},3:{halign:"right"},4:{halign:"center",fontStyle:"bold"}},
         alternateRowStyles:{fillColor:LIGHT},
-        didParseCell:d=>{ if(d.section==="head"&&d.column.index===0) d.cell.styles.halign="left"; if(d.section==="body"&&d.column.index===4) d.cell.styles.textColor=stColor(d.cell.raw); } });
+        didParseCell:d=>{ if(d.section==="head"&&d.column.index===0) d.cell.styles.halign="left"; if(d.section==="body"&&d.column.index===4) d.cell.styles.textColor=stColor(d.cell.raw);
+          if(d.section==="body"&&d.column.index===0&&list[d.row.index]&&list[d.row.index].sub){ d.cell.styles.cellPadding={top:4,bottom:4,right:4,left:16}; d.cell.styles.fontStyle="normal"; d.cell.styles.textColor=GRAY; } } });
       return doc.lastAutoTable.finalY; };
     const half=(W-2*M-12)/2;
     const y1=tbl("Energy zones",R.zones,M,half,y), y2=tbl("Strokes",R.strokes,M+half+12,half,y);
@@ -2116,7 +2126,7 @@ function renderHistory(){
     '<span class="actions">'+(canWrite?(confirmDel===p.id?'<span class="meta">Delete this practice?</span><button class="btn danger" data-del="'+esc(p.id)+'">Delete</button><button class="btn ghost" data-keep="1">Keep</button>':'<button class="btn ghost" data-edit="'+esc(p.id)+'">Edit</button><button class="btn ghost" data-ask="'+esc(p.id)+'">Delete</button>'):"")+'</span></div>'+
     zoneBar(p.zones||{},p.total,true)+
     (f=>'<div class="meta">'+ZONES.filter(z=>p.zones&&p.zones[z]).map(z=>z+" "+fmt(p.zones[z]*f)).join(" · ")+'</div>'+
-    '<div class="meta">'+STROKES.filter(s=>p.strokes&&p.strokes[s]).map(s=>s+" "+fmt(p.strokes[s]*f)).join(" · ")+' · Kick '+fmt((p.kick||0)*f)+(p.dolphin?' (dolphin '+fmt(p.dolphin*f)+')':"")+' · Pull '+fmt((p.pull||0)*f)+(p.pullArms?' (arms only '+fmt(p.pullArms*f)+')':"")+(p.resist?' · Resistance '+fmt(p.resist*f):"")+'</div>')(toYd(p))+
+    '<div class="meta">'+STROKES.filter(s=>p.strokes&&p.strokes[s]).map(s=>s+" "+fmt(p.strokes[s]*f)).join(" · ")+' · Kick '+fmt((p.kick||0)*f)+(p.dolphin?' (dolphin '+fmt(p.dolphin*f)+')':"")+' · Pull '+fmt((p.pull||0)*f)+(p.pullArms?' (of it arms only '+fmt(p.pullArms*f)+')':"")+(p.resist?' · Resistance '+fmt(p.resist*f):"")+'</div>')(toYd(p))+
     (p.notes?'<div>'+esc(p.notes)+'</div>':"")+'</div>').join("");
   box.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>editPractice(b.dataset.edit));
   const tw=$("#h-to-week"); if(tw) tw.onclick=e=>{ e.preventDefault(); weekAth=histAth; weekOf=histWeek; setTab("week"); };
@@ -2135,14 +2145,14 @@ function editPractice(id){
 }
 function exportRows(){
   const list=histList().slice().sort((a,b)=>(a.date+a.session).localeCompare(b.date+b.session));
-  const head=["Date","Session","Course","Athletes","Total (yd)"].concat(ZONES.map(z=>z+" yd"),STROKES.map(x=>x+" yd"),["Kick yd","Dolphin kick yd","Pull (all pad work) yd","Arms-only pull yd","Resistance / power yd","As swum","Notes"]);
+  const head=["Date","Session","Course","Athletes","Total (yd)"].concat(ZONES.map(z=>z+" yd"),STROKES.map(x=>x+" yd"),["Kick yd","Dolphin kick yd (part of kick)","Pull yd (all paddle and buoy work)","Arms only yd (part of pull)","Resistance / power yd","As swum","Notes"]);
   const rows=list.map(p=>{ const f=toYd(p), R=v=>Math.round((+v||0)*f); return [p.date,p.session,p.course||"SCY",names(p.athleteIds),R(p.total)].concat(ZONES.map(z=>R(p.zones&&p.zones[z])),STROKES.map(x=>R(p.strokes&&p.strokes[x])),[R(p.kick),R(p.dolphin),R(p.pull),R(p.pullArms),R(p.resist),asSwum(p)||fmt(p.total*f)+" yd "+(p.course||"SCY"),p.notes||""]); });
   return {head,rows,list};
 }
 function weeklyRows(list){
   const out=[], keyed={};
   for(const p of list){ for(const id of (p.athleteIds||[])){ if(histAth&&id!==histAth) continue; const k=id+"|"+weekStart(p.date); (keyed[k]=keyed[k]||{id,wk:weekStart(p.date),ps:[]}).ps.push(p); } }
-  const head=["Athlete","Group","Week of","Practices","Total (yd)"].concat(ZONES.map(z=>z+" yd"),ZONES.map(z=>z+" %"),STROKES.map(x=>x+" yd"),STROKES.map(x=>x+" %"),["Kick yd","Kick %","Dolphin kick yd","Dolphin % of kick","Pull yd","Pull %","Arms-only pull yd","Arms-only %","Resistance / power yd","Resistance %"]);
+  const head=["Athlete","Group","Week of","Practices","Total (yd)"].concat(ZONES.map(z=>z+" yd"),ZONES.map(z=>z+" %"),STROKES.map(x=>x+" yd"),STROKES.map(x=>x+" %"),["Kick yd","Kick %","Dolphin kick yd (part of kick)","Dolphin % of kick","Pull yd (all paddle and buoy work)","Pull %","Arms only yd (part of pull)","Arms only % of total","Resistance / power yd","Resistance %"]);
   Object.values(keyed).sort((a,b)=>(names([a.id])+a.wk).localeCompare(names([b.id])+b.wk)).forEach(g=>{
     const w=emptyTotals();
     g.ps.forEach(p=>{const f=toYd(p);w.total+=(+p.total||0)*f;w.kick+=(+p.kick||0)*f;w.pull+=(+p.pull||0)*f;w.dolphin+=(+p.dolphin||0)*f;w.pullArms+=(+p.pullArms||0)*f;w.resist+=(+p.resist||0)*f;ZONES.forEach(z=>w.zones[z]+=(+(p.zones&&p.zones[z])||0)*f);STROKES.forEach(x=>w.strokes[x]+=(+(p.strokes&&p.strokes[x])||0)*f);});
@@ -2240,7 +2250,7 @@ function renderAthletes(){
 
 /* ---------- targets for strokes, kick and pull (each coach sets their own) ---------- */
 let tgGroup="distance", tgEdit=null, tgArmReset=false;
-const TG_LABEL={Fr:"Fr",Bk:"Bk",Br:"Br",Fly:"Fly",Prime:"Prime",IM:"IM",kick:"Kick (% of total)",pull:"Pull, all pad work (% of total)"};
+const TG_LABEL={Fr:"Fr",Bk:"Bk",Br:"Br",Fly:"Fly",Prime:"Prime",IM:"IM",kick:"Kick (% of total)",pull:"Pull: all paddle and buoy work (% of total)"};
 function tgFresh(g){ return {st:jcopy(ST[g]),dol:DOL[g].slice(),arms:ARMS[g]}; }
 function renderTargets(){
   const sel=$("#tg-group"); if(!sel) return;
@@ -2249,9 +2259,11 @@ function renderTargets(){
   if(!tgEdit||tgEdit.g!==tgGroup) tgEdit=Object.assign({g:tgGroup},tgFresh(tgGroup));
   const e=tgEdit, ro=canWrite?"":" disabled";
   const inp=(k,i,v)=>'<input type="number" inputmode="decimal" min="0" max="100" step="0.5" data-k="'+k+'" data-i="'+i+'" value="'+v+'" aria-label="'+esc((TG_LABEL[k]||k)+" "+["target","low","high"][i])+'"'+ro+'>';
-  const rows=TG_ROWS.map(k=>'<tr><td>'+esc(TG_LABEL[k])+'</td><td>'+inp(k,0,e.st[k][0])+'</td><td>'+inp(k,1,e.st[k][1])+'</td><td>'+inp(k,2,e.st[k][2])+'</td></tr>').join("")
-    +'<tr><td>Dolphin kick (% of kick)</td><td class="meta">-</td><td>'+inp("dol",0,e.dol[0])+'</td><td>'+inp("dol",1,e.dol[1])+'</td></tr>'
-    +'<tr><td>Arms-only pull, at most (% of total)</td><td class="meta">-</td><td class="meta">-</td><td>'+inp("arms",0,e.arms)+'</td></tr>';
+  const trow=k=>'<tr><td>'+esc(TG_LABEL[k])+'</td><td>'+inp(k,0,e.st[k][0])+'</td><td>'+inp(k,1,e.st[k][1])+'</td><td>'+inp(k,2,e.st[k][2])+'</td></tr>';
+  const rows=TG_ROWS.filter(k=>k!=="pull").map(trow).join("")
+    +'<tr><td>↳ Dolphin kick, part of kick (% of kick)</td><td class="meta">-</td><td>'+inp("dol",0,e.dol[0])+'</td><td>'+inp("dol",1,e.dol[1])+'</td></tr>'
+    +trow("pull")
+    +'<tr><td>↳ Arms only, part of pull: at most (% of total)</td><td class="meta">-</td><td class="meta">-</td><td>'+inp("arms",0,e.arms)+'</td></tr>';
   const sum=STROKES.reduce((a,k)=>a+(+e.st[k][0]||0),0);
   const bad=TG_ROWS.filter(k=>!(e.st[k][1]<=e.st[k][0]&&e.st[k][0]<=e.st[k][2]));
   const msgs=[];

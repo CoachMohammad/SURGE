@@ -2068,7 +2068,7 @@ $("#wk-pdf").onclick=async()=>{
     y=Math.max(y1,y2)+12;
     y=tbl("Kick, pull and resistance",R.kp,M,W-2*M,y)+6;
     doc.setFont("helvetica","normal"); doc.setFontSize(7.5); doc.setTextColor(GRAY);
-    const noteT="Targets are "+(R.custom?"your targets":"the Weekly Volume Mix")+" for "+GROUPS[R.g]+". Zone targets are "+(R.plan?"this week's SURGE plan":"the SURGE profile for the group")+", flagged when more than 20% (at least 1.5 points) away."+(R.anyM?" Meters are converted to yards (1 m = 1.0936 yd).":"");
+    const noteT="Arms only and dolphin kick are parts of Pull and Kick, not extra yards. Targets are "+(R.custom?"your targets":"the Weekly Volume Mix")+" for "+GROUPS[R.g]+". Zone targets are "+(R.plan?"this week's SURGE plan":"the SURGE profile for the group")+", flagged when more than 20% (at least 1.5 points) away."+(R.anyM?" Meters are converted to yards (1 m = 1.0936 yd).":"");
     const nl=doc.splitTextToSize(noteT,W-2*M); txt(nl,M,y+6); y+=6+nl.length*9+8;
     // one sheet: the summary and the three tables only
     const n=doc.internal.getNumberOfPages();
@@ -2298,6 +2298,31 @@ async function saveTargets(g,v,msg){
 }
 $("#tg-group").onchange=e=>{ tgGroup=e.target.value; tgEdit=null; tgArmReset=false; renderTargets(); };
 
+/* ---------- one-time fix for practices saved before the pull rules (Oct 13, 2026) ----------
+   Then, pads without the word "pull" were counted as swim. Pull is all paddle and buoy work, and arms only
+   (buoy or band, no kick) is part of pull. Hand-typed numbers are kept: only the change from the sets is applied. */
+const PULL_RULES_LIVE="2026-10-13T21:52:00Z";
+function pullFix(v){
+  const doc=JSON.parse(JSON.stringify(v)); doc.fixes=Object.assign({},doc.fixes,{pull1:new Date().toISOString()});
+  const when=String(v.createdAt||v.updatedAt||""), before=when?when<PULL_RULES_LIVE:String(v.date||"")<"2026-10-14";
+  let dPull=0, dArms=0, changed=false;
+  if(before&&Array.isArray(doc.sets)){
+    const f=doc.setsUnit==="m"?M2Y:1, PAD=/\b(pads?|fpads?|ogpads?|paddles?|pb|buoy)\b/i, NOPAD=/\b(?:no|without|w\/o)\s+(?:pads?|paddles?|fpads?|ogpads?|buoy|pb|gear)\b/gi;
+    for(const x of doc.sets){
+      const src=String(x.src||"").replace(NOPAD," "), y=num(x.reps)*num(x.dist)*f;
+      const wasPull=x.type==="pull", wasArms=!!x.armsOnly;
+      if(x.type==="swim"&&PAD.test(src)) x.type="pull";
+      x.armsOnly=x.type==="pull"&&!/\bfins?\b/i.test(src)&&/\b(pull|pulls|pulling|pl|buoy|band|strap|pb)\b|\b\d+\s?p\b/i.test(src);
+      if(x.type==="pull"&&!wasPull){ dPull+=y; }
+      if(x.armsOnly!==wasArms) dArms+=x.armsOnly?y:-y;
+    }
+  }
+  if(dPull||dArms){ doc.pull=Math.max(0,(+doc.pull||0)+dPull); doc.pullArms=Math.max(0,(+doc.pullArms||0)+dArms); changed=true; }
+  if((+doc.pullArms||0)>(+doc.pull||0)){ doc.pullArms=+doc.pull||0; changed=true; } // arms only is part of pull, never more
+  if(changed&&doc.entered){ const f=doc.entered.unit==="m"?1/M2Y:1; doc.entered.pull=Math.round(doc.pull*f*10)/10; doc.entered.pullArms=Math.round(doc.pullArms*f*10)/10; }
+  return {doc,changed};
+}
+
 /* ---------- tabs ---------- */
 function setTab(t){
   tab=t;
@@ -2345,7 +2370,13 @@ try{ const t=localStorage.getItem("surge-log-tab"); if(t&&t!=="log") setTab(t); 
     renderTab();
     // practices saved before everything was kept in yards (or restored from an older backup): convert them once
     const old=snap.docs.filter(d=>{ const v=d.data(); return v&&v.units!=="yd"; });
-    if(old.length&&canWrite&&!converting){ converting=true; try{ for(const d of old) await db.collection("practices").doc(d.id).set(inYards(d.data())); }catch(e){} converting=false; }
+    if(old.length&&canWrite&&!converting){ converting=true; try{ for(const d of old) await db.collection("practices").doc(d.id).set(inYards(d.data())); }catch(e){} converting=false; return; }
+    // older practices: bring pull and arms only up to today's rules, once each
+    const fix=snap.docs.map(d=>({id:d.id,v:d.data()})).filter(x=>x.v&&x.v.units==="yd"&&!(x.v.fixes&&x.v.fixes.pull1));
+    if(fix.length&&canWrite&&!converting){ converting=true; let n=0;
+      try{ for(const x of fix){ const r=pullFix(x.v); if(r.changed) n++; await db.collection("practices").doc(x.id).set(r.doc); } }catch(e){}
+      converting=false; if(n) toast(n+" older practice"+(n>1?"s":"")+" updated so all paddle and buoy work counts as Pull");
+    }
   });
   // installable app: offline support when served from its own site (not inside Claude)
   if(!c&&"serviceWorker" in navigator&&(location.protocol==="https:"||/^(localhost|127\.0\.0\.1)$/.test(location.hostname))){ navigator.serviceWorker.register("sw.js").catch(()=>{}); }

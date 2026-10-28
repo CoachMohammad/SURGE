@@ -1139,6 +1139,14 @@ function parseWorkoutCore(text){
       if(z&&!z.v){ if(bz&&bz.v) z=bz; else { flags.push(z.flag); z=null; } }
       if(!z&&bz&&bz.v&&!(calmRest&&bz.flag)) z=bz;
       for(const h of hs.concat(notes?[notes]:[])){ if(z) break; const zz=zoneOf(h,dist); if(zz&&zz.v&&!(calmRest&&zz.flag)) z=zz; }
+      // the coach's rule for fast kick and fast pull (heart rate doesn't go as high and comes down fast):
+      // under 200 is EN2, 200 and up is EN3, and with fins (or fins and pads) it's EN3. Only when "fast" set the zone, not a zone, color or pace.
+      if(z&&z.flag&&/^Fast or hard set/.test(z.flag)&&(ty.v==="kick"||ty.v==="pull")){
+        const fins=/\bfins?\b/.test([seg].concat(hb).join(" ")+" "+B+(padCtx?" "+padCtx:""));
+        const what=ty.v==="kick"?"Fast kick":"Fast pull", zz=fins||dist>=200?"EN3":"EN2";
+        z={v:zz,kp:true}; flags.push(what+(fins?" with fins":dist>=200?" of 200 or more":" under 200")+", counted as "+zz);
+        if(note) note=note.replace(/counted as speed/,"counted as "+zz);
+      }
       // the coach's speed rules for fast sets of 150s and under (only when the zone came from "fast" words, not a zone, color or pace)
       const whole=repsDist(stripNotes(L)); // the interval belongs to the whole repeat, so only whole repeats are judged
       if(z&&z.flag&&/^Fast or hard set/.test(z.flag)&&dist<=150&&(!whole||whole.dist===dist)){
@@ -2323,6 +2331,29 @@ function pullFix(v){
   return {doc,changed};
 }
 
+/* ---------- one-time fix: fast kick and fast pull zones (Oct 28, 2026) ----------
+   Fast kick or pull under 200 is EN2; 200 and up, or with fins, is EN3. Only sets whose zone came from
+   "fast" words (now SP1-SP3, or EN3 under 200 without fins) are changed; a zone, color or pace the coach wrote stays. */
+function kpFastFix(v){
+  const doc=JSON.parse(JSON.stringify(v)); doc.fixes=Object.assign({},doc.fixes,{kpfast1:new Date().toISOString()});
+  let changed=false;
+  if(Array.isArray(doc.sets)){
+    const f=doc.setsUnit==="m"?M2Y:1;
+    for(const x of doc.sets){
+      if(x.type!=="kick"&&x.type!=="pull") continue;
+      const src=String(x.src||"").toLowerCase(), d=num(x.dist);
+      if(!FAST_RX.test(src)||EXPLICIT_Z.test(src)||!/^(SP1|SP2|SP3|EN3)$/.test(x.zone)) continue;
+      const nz=/\bfins?\b/.test(src)||d>=200?"EN3":"EN2";
+      if(nz===x.zone) continue;
+      const y=num(x.reps)*d*f; doc.zones=doc.zones||{};
+      doc.zones[x.zone]=Math.max(0,(+doc.zones[x.zone]||0)-y); doc.zones[nz]=(+doc.zones[nz]||0)+y;
+      x.zone=nz; changed=true;
+    }
+    if(changed&&doc.entered&&doc.entered.zones){ const g=doc.entered.unit==="m"?1/M2Y:1; doc.entered.zones={}; Object.keys(doc.zones).forEach(z=>doc.entered.zones[z]=Math.round(doc.zones[z]*g*10)/10); }
+  }
+  return {doc,changed};
+}
+
 /* ---------- tabs ---------- */
 function setTab(t){
   tab=t;
@@ -2372,10 +2403,15 @@ try{ const t=localStorage.getItem("surge-log-tab"); if(t&&t!=="log") setTab(t); 
     const old=snap.docs.filter(d=>{ const v=d.data(); return v&&v.units!=="yd"; });
     if(old.length&&canWrite&&!converting){ converting=true; try{ for(const d of old) await db.collection("practices").doc(d.id).set(inYards(d.data())); }catch(e){} converting=false; return; }
     // older practices: bring pull and arms only up to today's rules, once each
-    const fix=snap.docs.map(d=>({id:d.id,v:d.data()})).filter(x=>x.v&&x.v.units==="yd"&&!(x.v.fixes&&x.v.fixes.pull1));
-    if(fix.length&&canWrite&&!converting){ converting=true; let n=0;
-      try{ for(const x of fix){ const r=pullFix(x.v); if(r.changed) n++; await db.collection("practices").doc(x.id).set(r.doc); } }catch(e){}
-      converting=false; if(n) toast(n+" older practice"+(n>1?"s":"")+" updated so all paddle and buoy work counts as Pull");
+    const fix=snap.docs.map(d=>({id:d.id,v:d.data()})).filter(x=>x.v&&x.v.units==="yd"&&!(x.v.fixes&&x.v.fixes.pull1&&x.v.fixes.kpfast1));
+    if(fix.length&&canWrite&&!converting){ converting=true; let n=0, m=0;
+      try{ for(const x of fix){ let d=x.v;
+        if(!(d.fixes&&d.fixes.pull1)){ const r=pullFix(d); if(r.changed) n++; d=r.doc; }
+        if(!(d.fixes&&d.fixes.kpfast1)){ const r=kpFastFix(d); if(r.changed) m++; d=r.doc; }
+        await db.collection("practices").doc(x.id).set(d); } }catch(e){}
+      converting=false;
+      const msg=[n?n+" for paddle work as Pull":"",m?m+" for fast kick and pull zones":""].filter(Boolean);
+      if(msg.length) toast("Older practices updated: "+msg.join(", "));
     }
   });
   // installable app: offline support when served from its own site (not inside Claude)

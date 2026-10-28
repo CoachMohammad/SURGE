@@ -367,7 +367,7 @@ nav.tabs button{display:inline-flex;align-items:center;gap:6px}
         <div><strong>Resistance / power:</strong> chutes, shoots, parachutes, drag socks, socks, towers, buckets, tethers, stretch cords.</div>
         <div><strong>Zones:</strong> REC, EN1, EN2, EN3, SP1, SP2, SP3; white (REC), pink (EN1), red (EN2), blue (EN2 on 100s and up, EN3 on 75s and down), purple (EN3, or SP1 on 75s and down), green (SP2); WU, warm-up, WD, CD, cool-down, easy, social (REC); aerobic, steady, smooth, drill, DPS (EN1); threshold, CSS, mile pace, think mile (EN2); VO2, 400 or 500 pace (EN3); 200 pace (SP1); 100 pace (SP2); fast, max, sprint, all out, AFAP, burst (set from the distance); All Out, Max Effort, Best Effort, Race and Race Pace on 50s to 150s are SP2, and so is any fast 50 to 150 with a work to rest ratio of 1:2 or more rest (from the interval, or RI / rest when written); more than 8 x 25 fast with that much rest is SP2, other fast 25s SP3; an event pace like 1500 race pace keeps its own zone; bld, build, des, descend (marked Check).</div>
         <div><strong>Patterns:</strong> rounds (2x over indented lines, 3 x [note], 3x through ... by round, START SET / END SET), 100 Fr, 200 IM repeating to the set distance, 75kk/25sw, (25 kick, 75 swim), Odd = dr, Even = sw, fly/back, 6 strokes fast, first 15 fast, 9 x 50 - drill, kick, swim, 6 x 100 - 3 easy 3 fast. Rest lines like 1:00 and running totals like 1500 m 5:25 pm are skipped.</div>
-        <div><strong>Rounds:</strong> 2x { }, 2 Rnds { } and 2 rounds repeat what's inside. When rounds differ, each round gets its own part: Rnd1 PB/Pads, Rnd2 Pads; Rnd1= dr, Rnd2= sw; [Rnd1 FR, Rnd2 Prime, Rnd3 Ch]; a line that starts with Rnd2= counts in round 2 only; By Rnd, Bk, 25Fr/25Bk, Fr; Des by Rnd [Pink/Red/Blue]. On a single swim, NegSplit [Pink/Red] is split evenly across the zones.</div>
+        <div><strong>Rounds:</strong> 2x { }, 2 Rnds { } and 2 rounds repeat what's inside. When rounds differ, each round gets its own part: Rnd1 PB/Pads, Rnd2 Pads; Rnd1= dr, Rnd2= sw; [Rnd1 FR, Rnd2 Prime, Rnd3 Ch]; a line that starts with Rnd2= counts in round 2 only; a heading like 4x [2Rnds Fr, 2Rnds Prime], 5x [Rnd1-2 Fr, Rnd3-5 Bk] or 5x [Odd Rnds: w/ Sox, Even Rnds: Fins/Pads] sets each round of the sets under it (pads in a round count as pull); By Rnd, Bk, 25Fr/25Bk, Fr; Des by Rnd [Pink/Red/Blue]. On a single swim, NegSplit [Pink/Red] is split evenly across the zones.</div>
         <div><strong>Brackets:</strong> what's in [ ], ( ) or { } is read as part of the set. Strokes ([Fly]), kick, pull and gear ([Fins/Pads], (w/ chute)), dolphin kick ([UW]) and zones or colors ([EN2], (Pink), [Pink to Blue] on a descend) are counted. A zone or color in brackets wins over a guess from the set's words. Explanations ([Wide elbow catch], [Bk= High Tempo]) and optional gear ([Pads ok if not too sore]) don't change the count; they're saved in the practice's Notes, with the workout's Notes section.</div>
       </div>
     </details>
@@ -972,7 +972,7 @@ function collectNotes(text){
     let m; const re=/\[([^\]]*)\]/g;
     while((m=re.exec(L))){
       const c=m[1].trim();
-      if(!c||!setWordsLeft(c)||/^(ch|gear choice|opt|optional|choice)$/i.test(c)||COLOR_LIST.test(c)||new RegExp("^\\s*"+COLOR_W+"\\s*$","i").test(c)||/\b(?:rnds?|rounds?)\s*#?\s*\d/i.test(c)||/^[\d\s:\/.\-]+$/.test(c)) continue;
+      if(!c||!setWordsLeft(c)||/^(ch|gear choice|opt|optional|choice)$/i.test(c)||COLOR_LIST.test(c)||new RegExp("^\\s*"+COLOR_W+"\\s*$","i").test(c)||/\b(?:rnds?|rounds?)\s*#?\s*\d/i.test(c)||roundCounts(c)||oddEven(c,2)||/^[\d\s:\/.\-]+$/.test(c)) continue;
       const before=L.slice(0,m.index).replace(/\[[^\]]*\]/g," ").replace(/@.*$/,"");
       const set=/(\d{1,3}\s*[x×]\s*\d{2,4}.*|\d{2,4}\s+\S.*)$/.exec(before);
       const label=set?set[1].replace(/[\s\-–—,=]+$/,"").trim().slice(0,48):"";
@@ -1061,6 +1061,22 @@ function roundCounts(s){
   return items;
 }
 const rcSum=rc=>rc.reduce((a,x)=>a+x.n,0);
+// "Odd Rnds: w/ Sox, Even Rnds: Fins/Pads" for a group of n rounds
+function oddEven(s,n){
+  const o=/\bodds?\s*(?:rnds?|rounds?)?\s*[:=\-]?\s*(.*?)\s*(?:[,;\/]\s*)?(?=\bevens?\b|$)/i.exec(s), e=/\bevens?\s*(?:rnds?|rounds?)?\s*[:=\-]?\s*(.*?)\s*(?:[,;\/]\s*)?(?=\bodds?\b|$)/i.exec(s);
+  if(!o||!e||!o[1].trim()||!e[1].trim()||n<2) return null;
+  return Array.from({length:n},(_,i)=>(i%2?e[1]:o[1]).trim());
+}
+// what each round of a "4x" heading does: "[2Rnds Fr, 2Rnds Prime]", "[Rnd1 Fr, Rnd2 Bk]", "[Odd Rnds: Sox, Even Rnds: Fins/Pads]"
+function headRounds(c,n){
+  c=String(c||"").trim().replace(/^[\[(]\s*/,"").replace(/\s*[\])]\s*$/,"");
+  // "Rnd1-2 Fr, Rnd3-5 Bk": a range of rounds doing the same thing
+  c=c.replace(/\b(?:rnds?|rounds?)\s*#?\s*(\d)\s*(?:-|to|thru|through)\s*(\d)\s*[:=]?\s*([^,;]*)/gi,(m,a,b,d)=>+a<+b?Array.from({length:+b-+a+1},(_,k)=>"Rnd"+(+a+k)+" "+d.trim()).join(", "):m);
+  const rc=roundCounts(c); if(rc) return rcSum(rc)===n?rc.flatMap(x=>Array(x.n).fill(x.d)):null;
+  const rs=/^(?:rnds?|rounds?)\s*#?\s*\d/i.test(c)?rndSegs(c,true):null;
+  if(rs&&rs.max>=2&&rs.max<=n) return Array.from({length:rs.max},(_,k)=>rs.segs[k+1]||"");
+  return oddEven(c,n);
+}
 // a line that is only a round count with what to do: "8 Rnds IMO" (several of these in a row are read together)
 const isCountLine=l=>/^\s*[\[(]?\s*\d{1,2}\s*(?:rnds?|rounds?)\b\s*[:=\-]?\s*[a-z]/i.test(l)&&!/^\s*[\[(]?\s*\d{1,2}\s*(?:rnds?|rounds?)\s*(?:of|through|thru)\b/i.test(l);
 function expandCounts(line){
@@ -1074,6 +1090,7 @@ function expandCounts(line){
     const rc=roundCounts(part); if(!rc) continue;
     if(rcSum(rc)!==+m[2]) return null;
     const body=(line.slice(m[0].length,at).replace(/[\s,;:\-]+$/,"")+" "+after.trim()).trim();
+    if(!/\d/.test(body)) return null; // "4x [2Rnds Fr, 2Rnds Prime]" with the sets under it: the rounds are read with the sets
     return rc.map(x=>m[1]+x.n+"x"+body+" "+x.d);
   }
   return null;
@@ -1108,7 +1125,7 @@ function parseWorkoutCore(text){
   const out=[], skipped=[];
   const rawLines=String(text||"").split(/\r?\n/);
   const indentOf=r=>{const m=/^[\s ]*/.exec(r)[0]; let n=0; for(const ch of m) n+=ch==="\t"?4:1; return n;};
-  let section="", stack=[], pendingRC=null, pendingRnd=null, curRound=-1;
+  let section="", stack=[], pendingRC=null, pendingRnd=null, curRound=-1, rndGear=[];
   const useIndent=rawLines.some(r=>r.trim()&&indentOf(r)>0);
 
   function setsFromLine(line,L,hints){
@@ -1132,6 +1149,8 @@ function parseWorkoutCore(text){
       let ty=typeOf(seg); for(const h of hb){ if(ty) break; ty=typeOf(h); } ty=ty||{v:"swim"}; if(ty.flag) flags.push(ty.flag);
       let padCtx="";
       if(ty.v==="swim"){ if(PAD_RX.test(seg.replace(NO_PAD," "))) { ty={v:"pull"}; padCtx=seg; } else if(padAll&&(!splitPieces||/--/.test(main))) { ty={v:"pull"}; padCtx=gearHead; } }
+      // gear for this round ("Rnd2: Fins/Pads", "Even Rnds: Fins/Pads") counts the same way
+      if(ty.v==="swim"&&!own){ const rg=rndGear.join(" ").replace(NO_PAD," "); if(PAD_RX.test(rg)){ ty={v:"pull"}; padCtx=rg; } }
       let z=zoneOf(seg,dist);
       const bz=B?zoneOf(B,dist):null;
       const multiZ=B?new Set((B.match(new RegExp(EXPLICIT_Z.source,"g"))||[]).map(x=>x.replace(/[\s-]/g,""))).size>1:false;
@@ -1334,7 +1353,9 @@ function parseWorkoutCore(text){
   function expand(g,outer){
     const res=[];
     for(let r=0;r<g.n;r++){
-      const hints=[g.byRound.length?g.byRound[r%g.byRound.length]:"",g.hint].concat(outer).filter(Boolean);
+      const rh=g.byRound.length?g.byRound[r%g.byRound.length]:"";
+      const hints=[rh,g.hint].concat(outer).filter(Boolean);
+      rndGear.push(rh);
       for(const it of g.items){
         if(it.g) res.push(...expand(it.g,hints));
         else {
@@ -1350,6 +1371,7 @@ function parseWorkoutCore(text){
           curRound=keep;
         }
       }
+      rndGear.pop();
     }
     return res;
   }
@@ -1403,6 +1425,10 @@ function parseWorkoutCore(text){
         }
       }
     }
+    // "4x [2Rnds Fr, 2Rnds Prime]", "5x [Odd Rnds: w/ Sox, Even Rnds: Fins/Pads]": a heading that says what each round does
+    { const hm=/^(\d{1,2})\s*[x\u00d7]\s*(\S.*)$/.exec(L.trim());
+      const hr=hm&&!hasDistance(hm[2].replace(/\b\d{1,2}\s*(?:rnds?|rounds?)\b|\b(?:rnds?|rounds?)\s*#?\s*\d/g," "))?headRounds(hm[2],+hm[1]):null;
+      if(hr){ if(!useIndent) closeAll(); stack.push({n:+hm[1],indent:useIndent?indent:-1,hint:"",byRound:hr,items:[],section}); continue; } }
     // rounds: "2x", "3 x [note]", "3x through ... free/choice/free by round", "3 rounds", "x3", "Main set 2x"
     const thr=/^(\d{1,2})\s*(?:x|×)?\s*(?:through|thru|rounds?)\b\.*\s*(.*)$/.exec(main);
     const mult=thr||/(?:^|\s)(\d{1,2})\s*(?:x|×|rounds?|times|sets?)\s*(?:of|thru|through)?\s*[:\-({]?\s*$/.exec(main)||/^x\s*(\d{1,2})\b\s*$/.exec(main);

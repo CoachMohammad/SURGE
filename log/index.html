@@ -367,6 +367,7 @@ nav.tabs button{display:inline-flex;align-items:center;gap:6px}
         <div><strong>Resistance / power:</strong> chutes, shoots, parachutes, drag socks, socks, towers, buckets, tethers, stretch cords.</div>
         <div><strong>Zones:</strong> REC, EN1, EN2, EN3, SP1, SP2, SP3; white (REC), pink (EN1), red (EN2), blue (EN2 on 100s and up, EN3 on 75s and down), purple (EN3, or SP1 on 75s and down), green (SP2); WU, warm-up, WD, CD, cool-down, easy, social (REC); aerobic, steady, smooth, drill, DPS (EN1); threshold, CSS, mile pace, think mile (EN2); VO2, 400 or 500 pace (EN3); 200 pace (SP1); 100 pace (SP2); fast, max, sprint, all out, AFAP, burst (set from the distance); All Out, Max Effort, Best Effort, Race and Race Pace on 50s to 150s are SP2, and so is any fast 50 to 150 with a work to rest ratio of 1:2 or more rest (from the interval, or RI / rest when written); more than 8 x 25 fast with that much rest is SP2, other fast 25s SP3; an event pace like 1500 race pace keeps its own zone; bld, build, des, descend (marked Check).</div>
         <div><strong>Patterns:</strong> rounds (2x over indented lines, 3 x [note], 3x through ... by round, START SET / END SET), 100 Fr, 200 IM repeating to the set distance, 75kk/25sw, (25 kick, 75 swim), Odd = dr, Even = sw, fly/back, 6 strokes fast, first 15 fast, 9 x 50 - drill, kick, swim, 6 x 100 - 3 easy 3 fast. Rest lines like 1:00 and running totals like 1500 m 5:25 pm are skipped.</div>
+        <div><strong>Every Nth:</strong> 6x50 Ev 2nd Prime Fast means every 2nd repeat is Prime Fast and the others are counted without those words. Every 3rd, Ev 4th and Every other work too.</div>
         <div><strong>Descend and build:</strong> Des to Max Effort (or Des 1-3 to Fast) counts only the last repeat of each descend as fast. Bld on a 25 counts the last 5 as SP3. Max Effort or All Out on 25s and under stays SP3, even for kick and pull.</div>
         <div><strong>Rounds:</strong> 2x { }, 2 Rnds { } and 2 rounds repeat what's inside. When rounds differ, each round gets its own part: Rnd1 PB/Pads, Rnd2 Pads; Rnd1= dr, Rnd2= sw; [Rnd1 FR, Rnd2 Prime, Rnd3 Ch]; a line that starts with Rnd2= counts in round 2 only; Rnd1:/Rnd2: lines indented under a set inside a round give that set's part for each round; a heading like 4x [2Rnds Fr, 2Rnds Prime], 5x [Rnd1-2 Fr, Rnd3-5 Bk] or 5x [Odd Rnds: w/ Sox, Even Rnds: Fins/Pads] sets each round of the sets under it (pads in a round count as pull); By Rnd, Bk, 25Fr/25Bk, Fr; Des by Rnd [Pink/Red/Blue]. On a single swim, NegSplit [Pink/Red] is split evenly across the zones.</div>
         <div><strong>Brackets:</strong> what's in [ ], ( ) or { } is read as part of the set. Strokes ([Fly]), kick, pull and gear ([Fins/Pads], (w/ chute)), dolphin kick ([UW]) and zones or colors ([EN2], (Pink), [Pink to Blue] on a descend) are counted. A zone or color in brackets wins over a guess from the set's words. Explanations ([Wide elbow catch], [Bk= High Tempo]) and optional gear ([Pads ok if not too sore]) don't change the count; they're saved in the practice's Notes, with the workout's Notes section.</div>
@@ -958,7 +959,21 @@ function bldParts(t){
   const kp=/\b(kick|kk|pull|pl|pads?|fpads?|paddles?|pb|buoy)\b/.test(stripNotes(t));
   return [rest.replace(sd[0],sd[1]+" x 20"), rest.replace(sd[0],sd[1]+" x 5yd")+(kp?" fast":" sp3")];
 }
-const colorParts=t=>colorParts0(t).flatMap(desParts).flatMap(bldParts);
+// "6x50 @1:00 Ev 2nd Prime Fast": every 2nd repeat is Prime Fast, the others are counted without those words.
+// Also "Every 3rd", "Ev other", "Every 4th one".
+function everyParts(t){
+  const sd=/^\s*(\d{1,3})\s*[x\u00d7]\s*(\d{2,4})\b/.exec(t);
+  const m=/\b(?:ev|every)\.?\s*(?:(\d{1,2})\s*(?:st|nd|rd|th)?|(other))\b(?:\s*(?:one|rep|repeat|50|25|100))?\s*/.exec(t);
+  if(!sd||!m||m.index<sd[0].length) return [t];
+  const n=+sd[1], k=m[2]?2:+m[1];
+  if(k<2||k>n) return [t];
+  const fastN=Math.floor(n/k), after=t.slice(m.index+m[0].length), d=/^[^@\[;]*/.exec(after)[0];
+  const head=t.slice(0,m.index), tail=after.slice(d.length);
+  const out=[(head.replace(sd[0],fastN+" x "+sd[2])+" "+d+" "+tail).replace(/\s+/g," ").trim()];
+  if(n-fastN) out.unshift((head.replace(sd[0],(n-fastN)+" x "+sd[2])+" "+tail).replace(/\s+/g," ").trim());
+  return out;
+}
+const colorParts=t=>colorParts0(t).flatMap(everyParts).flatMap(desParts).flatMap(bldParts);
 function colorParts0(t){
   t=t.replace(/\[([^\]]*)\]/g,(m,c)=>"["+colorRange(c)+"]");
   const m=/\[([^\]]*)\]/g; let b;

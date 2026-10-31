@@ -367,7 +367,8 @@ nav.tabs button{display:inline-flex;align-items:center;gap:6px}
         <div><strong>Resistance / power:</strong> chutes, shoots, parachutes, drag socks, socks, towers, buckets, tethers, stretch cords.</div>
         <div><strong>Zones:</strong> REC, EN1, EN2, EN3, SP1, SP2, SP3; white (REC), pink (EN1), red (EN2), blue (EN2 on 100s and up, EN3 on 75s and down), purple (EN3, or SP1 on 75s and down), green (SP2); WU, warm-up, WD, CD, cool-down, easy, social (REC); aerobic, steady, smooth, drill, DPS (EN1); threshold, CSS, mile pace, think mile (EN2); VO2, 400 or 500 pace (EN3); 200 pace (SP1); 100 pace (SP2); fast, max, sprint, all out, AFAP, burst (set from the distance); All Out, Max Effort, Best Effort, Race and Race Pace on 50s to 150s are SP2, and so is any fast 50 to 150 with a work to rest ratio of 1:2 or more rest (from the interval, or RI / rest when written); more than 8 x 25 fast with that much rest is SP2, other fast 25s SP3; an event pace like 1500 race pace keeps its own zone; bld, build, des, descend (marked Check).</div>
         <div><strong>Patterns:</strong> rounds (2x over indented lines, 3 x [note], 3x through ... by round, START SET / END SET), 100 Fr, 200 IM repeating to the set distance, 75kk/25sw, (25 kick, 75 swim), Odd = dr, Even = sw, fly/back, 6 strokes fast, first 15 fast, 9 x 50 - drill, kick, swim, 6 x 100 - 3 easy 3 fast. Rest lines like 1:00 and running totals like 1500 m 5:25 pm are skipped.</div>
-        <div><strong>Rounds:</strong> 2x { }, 2 Rnds { } and 2 rounds repeat what's inside. When rounds differ, each round gets its own part: Rnd1 PB/Pads, Rnd2 Pads; Rnd1= dr, Rnd2= sw; [Rnd1 FR, Rnd2 Prime, Rnd3 Ch]; a line that starts with Rnd2= counts in round 2 only; a heading like 4x [2Rnds Fr, 2Rnds Prime], 5x [Rnd1-2 Fr, Rnd3-5 Bk] or 5x [Odd Rnds: w/ Sox, Even Rnds: Fins/Pads] sets each round of the sets under it (pads in a round count as pull); By Rnd, Bk, 25Fr/25Bk, Fr; Des by Rnd [Pink/Red/Blue]. On a single swim, NegSplit [Pink/Red] is split evenly across the zones.</div>
+        <div><strong>Descend and build:</strong> Des to Max Effort (or Des 1-3 to Fast) counts only the last repeat of each descend as fast. Bld on a 25 counts the last 5 as SP3. Max Effort or All Out on 25s and under stays SP3, even for kick and pull.</div>
+        <div><strong>Rounds:</strong> 2x { }, 2 Rnds { } and 2 rounds repeat what's inside. When rounds differ, each round gets its own part: Rnd1 PB/Pads, Rnd2 Pads; Rnd1= dr, Rnd2= sw; [Rnd1 FR, Rnd2 Prime, Rnd3 Ch]; a line that starts with Rnd2= counts in round 2 only; Rnd1:/Rnd2: lines indented under a set inside a round give that set's part for each round; a heading like 4x [2Rnds Fr, 2Rnds Prime], 5x [Rnd1-2 Fr, Rnd3-5 Bk] or 5x [Odd Rnds: w/ Sox, Even Rnds: Fins/Pads] sets each round of the sets under it (pads in a round count as pull); By Rnd, Bk, 25Fr/25Bk, Fr; Des by Rnd [Pink/Red/Blue]. On a single swim, NegSplit [Pink/Red] is split evenly across the zones.</div>
         <div><strong>Brackets:</strong> what's in [ ], ( ) or { } is read as part of the set. Strokes ([Fly]), kick, pull and gear ([Fins/Pads], (w/ chute)), dolphin kick ([UW]) and zones or colors ([EN2], (Pink), [Pink to Blue] on a descend) are counted. A zone or color in brackets wins over a guess from the set's words. Explanations ([Wide elbow catch], [Bk= High Tempo]) and optional gear ([Pads ok if not too sore]) don't change the count; they're saved in the practice's Notes, with the workout's Notes section.</div>
       </div>
     </details>
@@ -785,7 +786,7 @@ function repsDist(s){
   const c=cleanNums(s);
   let m=/(\d+)\s*[x×*]\s*(\d+)\s*(?:'?s\b|[kpd]\b|yds?\b|m\b)?/.exec(c);
   // "8x30": short-course and cross-pool distances that aren't 25s count too (but "4x30 sec" is time, not distance)
-  if(m){let a=+m[1],b=+m[2]; if(a>b&&b<=20&&a>=25){const t=a;a=b;b=t;} const after=c.slice(m.index+m[0].length), odd=b%25!==0&&b>=10&&b<=1500&&b%5===0&&!/(?:'?s|sec)\s*$/i.test(m[0].trim())&&!/^\s*(?:sec|secs|seconds?\b|"|:)/i.test(after); if((b>=25&&b%25===0||odd)&&a>=1&&a<=200) return {reps:a,dist:b,tail:c.slice(m.index+m[0].length),pre:c.slice(0,m.index)};}
+  if(m){let a=+m[1],b=+m[2]; if(a>b&&b<=20&&a>=25){const t=a;a=b;b=t;} const after=c.slice(m.index+m[0].length), odd=b%25!==0&&(b>=10||b===5&&/yd$/.test(m[0].trim()))&&b<=1500&&b%5===0&&!/(?:'?s|sec)\s*$/i.test(m[0].trim())&&!/^\s*(?:sec|secs|seconds?\b|"|:)/i.test(after); if((b>=25&&b%25===0||odd)&&a>=1&&a<=200) return {reps:a,dist:b,tail:c.slice(m.index+m[0].length),pre:c.slice(0,m.index)};}
   const re=/\b(\d{2,5})\s*(?:'?s\b|[kpd]\b|yds?\b|yards?\b|m\b)?/g; let mm;
   while((mm=re.exec(c))){
     const d=+mm[1];
@@ -937,7 +938,28 @@ const unbracketZones=t=>t.replace(/\[([^\]]*)\]/g,(m,c)=>new RegExp("^\\s*"+COLO
 const COLOR_ORDER=["white","pink","red","blue","purple"];
 // "[Pink to Blue]" means Pink, Red, Blue
 const colorRange=c=>c.replace(new RegExp("\\b("+COLOR_ORDER.join("|")+")\\s*(?:to|thru|through|->|→|-)\\s*("+COLOR_ORDER.join("|")+")\\b","gi"),(m,a,b)=>{ const i=COLOR_ORDER.indexOf(a.toLowerCase()), j=COLOR_ORDER.indexOf(b.toLowerCase()); return i<j?COLOR_ORDER.slice(i,j+1).join("/"):m; });
-function colorParts(t){
+// "Des to Max Effort" / "Des 1-3 to Fast": only the last repeat of each descend is fast, the others are counted as a descend.
+// "Bld" on a 25 (building inside the 25, not across repeats): the last 5 are fast.
+const DES_TO=/\b(?:des|desc|descend|descending)\s*(?:(\d{1,2})\s*(?:-|to|thru)\s*(\d{1,2})\s*)?(?:to|->|\u2192)\s*(fast|max(?:imum)?(?:\s*effort)?|all[\s-]?out|sprint|race(?:\s*pace)?|afap)\b/;
+function desParts(t){
+  const sd=/^\s*(\d{1,3})\s*[x\u00d7]\s*(\d{2,4})\b/.exec(t), m=DES_TO.exec(t);
+  if(!sd||!m) return [t];
+  const n=+sd[1], k=m[1]?+m[2]-(+m[1])+1:n;
+  if(n<2||k<2||n%k) return [t];
+  const fastN=n/k, rest=t.replace(m[0],"des");
+  return [rest.replace(sd[0],(n-fastN)+" x "+sd[2]), t.replace(sd[0],fastN+" x "+sd[2])];
+}
+function bldParts(t){
+  const sd=/^\s*(\d{1,3})\s*[x\u00d7]\s*25\b/.exec(t);
+  if(!sd||!/\b(?:bld|build|building)\b/.test(stripNotes(t))) return [t];
+  // a build across the repeats ("Bld 1-4", "Bld by 25", "Bld by rep") or a zone the coach wrote is left as it is
+  if(/\b(?:bld|build|building)\s*(?:\d|by|across|thru|through)\b/.test(t)||EXPLICIT_Z.test(stripNotes(t))||new RegExp("\\[[^\\]]*"+COLOR_W).test(t)) return [t];
+  const rest=t.replace(/\b(?:bld|build|building)(?:\s*to\s*(?:fast|max(?:\s*effort)?|sprint))?\b/g," ");
+  const kp=/\b(kick|kk|pull|pl|pads?|fpads?|paddles?|pb|buoy)\b/.test(stripNotes(t));
+  return [rest.replace(sd[0],sd[1]+" x 20"), rest.replace(sd[0],sd[1]+" x 5yd")+(kp?" fast":" sp3")];
+}
+const colorParts=t=>colorParts0(t).flatMap(desParts).flatMap(bldParts);
+function colorParts0(t){
   t=t.replace(/\[([^\]]*)\]/g,(m,c)=>"["+colorRange(c)+"]");
   const m=/\[([^\]]*)\]/g; let b;
   while((b=m.exec(t))){ if(!COLOR_LIST.test(b[1])) continue;
@@ -1160,7 +1182,7 @@ function parseWorkoutCore(text){
       for(const h of hs.concat(notes?[notes]:[])){ if(z) break; const zz=zoneOf(h,dist); if(zz&&zz.v&&!(calmRest&&zz.flag)) z=zz; }
       // the coach's rule for fast kick and fast pull (heart rate doesn't go as high and comes down fast):
       // under 200 is EN2, 200 and up is EN3, and with fins (or fins and pads) it's EN3. Only when "fast" set the zone, not a zone, color or pace.
-      if(z&&z.flag&&/^Fast or hard set/.test(z.flag)&&(ty.v==="kick"||ty.v==="pull")){
+      if(z&&z.flag&&/^Fast or hard set/.test(z.flag)&&(ty.v==="kick"||ty.v==="pull")&&!(dist<=25&&EFFORT_RX.test(seg+" "+L+" "+B))){
         const fins=/\bfins?\b/.test([seg].concat(hb).join(" ")+" "+B+(padCtx?" "+padCtx:""));
         const what=ty.v==="kick"?"Fast kick":"Fast pull", zz=fins||dist>=200?"EN3":"EN2";
         z={v:zz,kp:true}; flags.push(what+(fins?" with fins":dist>=200?" of 200 or more":" under 200")+", counted as "+zz);
@@ -1391,6 +1413,11 @@ function parseWorkoutCore(text){
     if(DATE_RX.test(L)&&/'\d{2}|\d{4}|\bmeters\b|\byards\b/.test(L)) continue;
     if(/default interval|stress\s*:|\btotals?\b|\(\d+\s*hr|^[-=_*\s]{3,}$/.test(L)) continue;
     if(useIndent) closeTo(indent);
+    // "2x75 @1:15" with "Rnd1: Br Fins/Pads ..." and "Rnd2: Br w/ Pads Bld" under it: each round of the group does that part
+    if(useIndent&&stack.length&&ROUND_LINE.test(main)){
+      const top=stack[stack.length-1], it=top.items[top.items.length-1];
+      if(it&&!it.g&&it.indent<indent&&top.n>1){ it.L=it.L.replace(/\s*\[(rnd\d[^\]]*)\]\s*$|$/,(m,c)=>" ["+(c?c+", ":"")+L.trim().replace(/[\[\]]/g," ")+"]"); continue; }
+    }
     if(/^end\s*set\b/.test(main)){ if(stack.length) closeTop(); continue; }
     if(/^start\s*set\b/.test(main)&&!hasDistance(main.replace(/^start\s*set/,""))){
       const sm=/(\d{1,2})\s*(?:x|×|rounds?|times)/.exec(main); if(!useIndent) closeAll();
@@ -1454,7 +1481,7 @@ function parseWorkoutCore(text){
       else skipped.push(line);
       continue;
     }
-    if(stack.length){ stack[stack.length-1].items.push({line,L,section}); continue; }
+    if(stack.length){ stack[stack.length-1].items.push({line,L,section,indent}); continue; }
     // "3 x 200 [Rnd1 Fr, Rnd2 Bk, Rnd3 Br]": each round is one of the repeats
     const rk=(rndSegs(L,false)||{}).max||0, r0=/^\s*(\d{1,3})\s*[x×]\s*(\d{2,4})\b/.exec(L);
     const rts=rk>1&&r0&&+r0[1]%rk===0?roundTexts(L.replace(r0[0],(+r0[1]/rk)+" x "+r0[2]),rk):null;

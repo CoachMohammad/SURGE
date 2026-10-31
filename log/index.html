@@ -367,6 +367,7 @@ nav.tabs button{display:inline-flex;align-items:center;gap:6px}
         <div><strong>Resistance / power:</strong> chutes, shoots, parachutes, drag socks, socks, towers, buckets, tethers, stretch cords.</div>
         <div><strong>Zones:</strong> REC, EN1, EN2, EN3, SP1, SP2, SP3; white (REC), pink (EN1), red (EN2), blue (EN2 on 100s and up, EN3 on 75s and down), purple (EN3, or SP1 on 75s and down), green (SP2); WU, warm-up, WD, CD, cool-down, easy, social (REC); aerobic, steady, smooth, drill, DPS (EN1); threshold, CSS, mile pace, think mile (EN2); VO2, 400 or 500 pace (EN3); 200 pace (SP1); 100 pace (SP2); fast, max, sprint, all out, AFAP, burst (set from the distance); All Out, Max Effort, Best Effort, Race and Race Pace on 50s to 150s are SP2, and so is any fast 50 to 150 with a work to rest ratio of 1:2 or more rest (from the interval, or RI / rest when written); more than 8 x 25 fast with that much rest is SP2, other fast 25s SP3; an event pace like 1500 race pace keeps its own zone; bld, build, des, descend (marked Check).</div>
         <div><strong>Patterns:</strong> rounds (2x over indented lines, 3 x [note], 3x through ... by round, START SET / END SET), 100 Fr, 200 IM repeating to the set distance, 75kk/25sw, (25 kick, 75 swim), Odd = dr, Even = sw, fly/back, 6 strokes fast, first 15 fast, 9 x 50 - drill, kick, swim, 6 x 100 - 3 easy 3 fast. Rest lines like 1:00 and running totals like 1500 m 5:25 pm are skipped.</div>
+        <div><strong>Pace notes:</strong> a pace note sets the zone of a fast swim set: [think mile], [think 1000], 800 pace are EN2; [think 500], 400 pace EN3; [think p-], p200, 200 pace SP1; 100 and 50 pace SP2. Fast 100s with no pace note are EN3.</div>
         <div><strong>SP1:</strong> a fast swim set with a 200 pace note ([think p-], p200, 200 pace) is SP1. Fast 50s with less rest than 1:2 work to rest (like 50s @1:00) are SP1; with 1:2 or more rest they stay SP2. Max Effort, All Out and Race on 50s stay SP2.</div>
         <div><strong>Every Nth:</strong> 6x50 Ev 2nd Prime Fast means every 2nd repeat is Prime Fast and the others are counted without those words. Every 3rd, Ev 4th and Every other work too.</div>
         <div><strong>Descend and build:</strong> Des to Max Effort (or Des 1-3 to Fast) counts only the last repeat of each descend as fast. Bld on a 25 counts the last 5 as SP3. Max Effort or All Out on 25s and under stays SP3, even for kick and pull.</div>
@@ -768,7 +769,8 @@ function zoneOf(s,dist){
   if(/\b(warm[\s-]?up|warmup|wu|w\/u|cool[\s-]?down|cooldown|warm[\s-]?down|wd|cd|c\/d|easy|ez|loose|loosen|flush|flushout|social|recover|smooth)\b/.test(s)) return {v:"REC"};
   if(FAST_RX.test(s)){
     const d=dist||100;
-    return {v:d<=25?"SP3":d<=50?"SP2":d<=150?"SP1":d<=300?"EN3":"EN2",flag:"Fast or hard set, zone set from the distance"};
+    // the coach's rule: fast 100s are EN3 (Max Effort or Race, or 1:2 or more rest, still make them SP2)
+    return {v:d<=25?"SP3":d<=50?"SP2":d===100?"EN3":d<=150?"SP1":d<=300?"EN3":"EN2",flag:"Fast or hard set, zone set from the distance"};
   }
   if(/\b(desc|des|descend|descending|build|bld)\b/.test(s)) return {v:null,flag:"Descend or build set, check the zone"};
   if(/\b(aerobic|steady|moderate|mod|base|drill|drills|dr|technique|dps|fcu|scull|sculling|act|sa|ld|sd|otf|hypoxic|be\d|get ready|usual pattern|long|hold length)\b/.test(s)) return {v:"EN1"};
@@ -906,6 +908,15 @@ function parenNotes(t){ return String(t||"").replace(/\(([^()\n]*)\)/g,(m,c)=>SE
    Work time is estimated from an all-out pace, since the log doesn't know each swimmer's times. */
 // SP1 rule 1: a 200-pace note on a fast swim set ("[think p-]", "p200", "200 pace") makes it SP1
 const PACE_SP1=/(?:^|[\s\[(\/])p\s*-(?=[\s\])\/,]|$)|\bp-?\s*200\b|\b200\s*(?:race\s*)?pace\b/;
+// A pace note sets the zone of a fast swim set: [think mile], [think 1000], [think 500], p200, [think p-], 100 pace.
+// Mile, 1650, 1500, 1000 and 800 pace are EN2; 500 and 400 EN3; 200 SP1; 100 and 50 SP2.
+const PACE_Z={mile:"EN2",1650:"EN2",1500:"EN2",1000:"EN2",800:"EN2",500:"EN3",400:"EN3",200:"SP1",100:"SP2",50:"SP2"};
+function paceZone(t){
+  t=String(t||"").toLowerCase();
+  if(/(?:^|[\s\[(\/])p\s*-(?=[\s\])\/,]|$)/.test(t)) return {v:"SP1",what:"200"};
+  const m=/\bthink\s+(?:p\s*-?\s*)?(\d{2,4}|mile)\b/.exec(t)||/\bp\s*-?\s*(\d{2,4}|mile)\b/.exec(t)||/\b(\d{2,4}|mile)\s*(?:race\s*)?pace\b/.exec(t);
+  return m&&PACE_Z[m[1]]?{v:PACE_Z[m[1]],what:m[1]}:null;
+}
 const EFFORT_RX=/\b(all[\s-]?out|max(?:imum)?\s*effort|best\s*effort|race\s*pace|race)\b/;
 const ALLOUT_SEC={25:12,50:26,75:41,100:56,150:88};
 function workSec(dist,type,ctx){
@@ -1206,7 +1217,8 @@ function parseWorkoutCore(text){
         z={v:zz,kp:true}; flags.push(what+(fins?" with fins":dist>=200?" of 200 or more":" under 200")+", counted as "+zz);
         if(note) note=note.replace(/counted as speed/,"counted as "+zz);
       }
-      if(z&&z.flag&&/^Fast or hard set/.test(z.flag)&&ty.v==="swim"&&PACE_SP1.test(seg+" "+B)){ z={v:"SP1"}; flags.push("Fast with a 200 pace note, counted as SP1"); }
+      { const pz=ty.v==="swim"&&!EXPLICIT_Z.test(seg+" "+B)?paceZone(seg+" "+B):null;
+        if(pz&&(!z||z.flag&&/^Fast or hard set/.test(z.flag))){ z={v:pz.v}; flags.push((/^\d/.test(pz.what)?pz.what:"Mile")+" pace note, counted as "+pz.v); } }
       // the coach's speed rules for fast sets of 150s and under (only when the zone came from "fast" words, not a zone, color or pace)
       const whole=repsDist(stripNotes(L)); // the interval belongs to the whole repeat, so only whole repeats are judged
       if(z&&z.flag&&/^Fast or hard set/.test(z.flag)&&dist<=150&&(!whole||whole.dist===dist)){
@@ -1830,7 +1842,7 @@ $("#save").onclick=async()=>{
   { const old=form.id?practices.find(p=>p.id===form.id):null, w=($("#paste").value||"").trim();
     // the whole workout as pasted, kept on this device so later rule changes can re-read it
     if(w) doc.workout=w.slice(0,20000); else if(old&&old.workout) doc.workout=old.workout;
-    doc.fixes=Object.assign({},old&&old.fixes,{pull1:now,kpfast1:now,rules2:now}); }
+    doc.fixes=Object.assign({},old&&old.fixes,{pull1:now,kpfast1:now,rules2:now,pace1:now}); }
   const btn=$("#save"); btn.disabled=true;
   try{
     if(form.id){ const old=practices.find(p=>p.id===form.id); doc.createdAt=(old&&old.createdAt)||now; await db.collection("practices").doc(form.id).set(doc); toast("Changes saved"+(doc.entered?" as "+fmt(doc.total)+" yd":"")); }
@@ -2473,7 +2485,8 @@ function rules2Fix(v){
       // Max Effort or All Out on 25s and under stays SP3, even for kick and pull
       if((x.type==="kick"||x.type==="pull")&&d<=25&&EFFORT_RX.test(src)&&!EXPLICIT_Z.test(src)&&/^(EN2|EN3)$/.test(x.zone)){ x.zone="SP3"; x.flag="Max Effort on 25s, counted as SP3"; }
       if(x.type==="swim"&&fastFlag(x)&&!EXPLICIT_Z.test(main)){
-        if(PACE_SP1.test(src)&&x.zone!=="SP1"){ x.zone="SP1"; x.flag="Fast with a 200 pace note, counted as SP1"; }
+        const pz=paceZone(src);
+        if(pz){ if(x.zone!==pz.v){ x.zone=pz.v; x.flag=(/^\d/.test(pz.what)?pz.what:"Mile")+" pace note, counted as "+pz.v; } }
         else if(d>25&&d<=50&&x.zone==="SP2"&&!EFFORT_RX.test(src)){ const r=restSec(src,d,"swim"); if(r!=null&&r/workSec(d,"swim",src)<2){ x.zone="SP1"; x.flag="Fast 50s with less than 1:2 work to rest, counted as SP1"; } }
       }
       if(num(x.reps)>0) out.push(x);
@@ -2489,6 +2502,26 @@ function rules2Fix(v){
   if(doc.entered){ const g=doc.entered.unit==="m"?1/M2Y:1; doc.entered.zones={}; doc.entered.strokes={};
     Object.keys(doc.zones).forEach(z=>doc.entered.zones[z]=Math.round(doc.zones[z]*g*10)/10); Object.keys(doc.strokes).forEach(k=>doc.entered.strokes[k]=Math.round(doc.strokes[k]*g*10)/10); }
   return {doc,changed:true};
+}
+
+// Oct 31: pace notes ([think mile], [think 1000], [think 500]) set the zone of fast swim sets; for practices saved before
+function paceFix(v){
+  const doc=JSON.parse(JSON.stringify(v)); doc.fixes=Object.assign({},doc.fixes,{pace1:new Date().toISOString()});
+  if(!Array.isArray(doc.sets)||!doc.sets.length) return {doc,changed:false};
+  const f=doc.setsUnit==="m"?M2Y:1; let changed=false;
+  for(const x of doc.sets){
+    const src=String(x.src||"").toLowerCase();
+    if(x.type!=="swim"||EXPLICIT_Z.test(stripNotes(src))||!/(?:^|\. )(Fast or hard set|Fast 50s with less than|Fast with a 200 pace)/.test(x.flag||"")) continue;
+    let pz=paceZone(src);
+    // fast 100s are EN3 now (they were SP1)
+    if(!pz&&num(x.dist)===100&&x.zone==="SP1"&&/(?:^|\. )Fast or hard set/.test(x.flag||"")) pz={v:"EN3",fast100:true};
+    if(!pz||pz.v===x.zone) continue;
+    const y=num(x.reps)*num(x.dist)*f; doc.zones=doc.zones||{};
+    doc.zones[x.zone]=Math.max(0,(+doc.zones[x.zone]||0)-y); doc.zones[pz.v]=(+doc.zones[pz.v]||0)+y;
+    x.zone=pz.v; if(!pz.fast100) x.flag=(/^\d/.test(pz.what)?pz.what:"Mile")+" pace note, counted as "+pz.v; changed=true;
+  }
+  if(changed&&doc.entered&&doc.entered.zones){ const g=doc.entered.unit==="m"?1/M2Y:1; doc.entered.zones={}; Object.keys(doc.zones).forEach(z=>doc.entered.zones[z]=Math.round(doc.zones[z]*g*10)/10); }
+  return {doc,changed};
 }
 
 /* ---------- tabs ---------- */
@@ -2540,15 +2573,16 @@ try{ const t=localStorage.getItem("surge-log-tab"); if(t&&t!=="log") setTab(t); 
     const old=snap.docs.filter(d=>{ const v=d.data(); return v&&v.units!=="yd"; });
     if(old.length&&canWrite&&!converting){ converting=true; try{ for(const d of old) await db.collection("practices").doc(d.id).set(inYards(d.data())); }catch(e){} converting=false; return; }
     // older practices: bring pull and arms only up to today's rules, once each
-    const fix=snap.docs.map(d=>({id:d.id,v:d.data()})).filter(x=>x.v&&x.v.units==="yd"&&!(x.v.fixes&&x.v.fixes.pull1&&x.v.fixes.kpfast1&&x.v.fixes.rules2));
+    const fix=snap.docs.map(d=>({id:d.id,v:d.data()})).filter(x=>x.v&&x.v.units==="yd"&&!(x.v.fixes&&x.v.fixes.pull1&&x.v.fixes.kpfast1&&x.v.fixes.rules2&&x.v.fixes.pace1));
     if(fix.length&&canWrite&&!converting){ converting=true; let n=0, m=0, q=0;
       try{ for(const x of fix){ let d=x.v;
         if(!(d.fixes&&d.fixes.pull1)){ const r=pullFix(d); if(r.changed) n++; d=r.doc; }
         if(!(d.fixes&&d.fixes.kpfast1)){ const r=kpFastFix(d); if(r.changed) m++; d=r.doc; }
         if(!(d.fixes&&d.fixes.rules2)){ const r=rules2Fix(d); if(r.changed) q++; d=r.doc; }
+        if(!(d.fixes&&d.fixes.pace1)){ const r=paceFix(d); if(r.changed) q++; d=r.doc; }
         await db.collection("practices").doc(x.id).set(d); } }catch(e){}
       converting=false;
-      const msg=[n?n+" for paddle work as Pull":"",m?m+" for fast kick and pull zones":"",q?q+" for Ev 2nd, Des, Bld and SP1 rules":""].filter(Boolean);
+      const msg=[n?n+" for paddle work as Pull":"",m?m+" for fast kick and pull zones":"",q?q+" for Ev 2nd, Des, Bld, SP1, pace notes and fast 100s":""].filter(Boolean);
       if(msg.length) toast("Older practices updated: "+msg.join(", "));
     }
   });

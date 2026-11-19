@@ -225,7 +225,7 @@
         <input type="hidden" id="in-comp2-date">
       </div>
       <div class="field">
-        <label for="in-minitaper">Mini-Taper Length, Days (Comp 1 / 2)</label>
+        <label for="in-minitaper">Mini-Taper Length, Days (Comp 1 / 2; meets 12+ weeks before the next get a full 3-week taper)</label>
         <input type="number" id="in-minitaper" min="3" max="21" placeholder="e.g. 10" autocomplete="off">
       </div>
       <div class="field">
@@ -392,6 +392,8 @@ const TAPER_LEN_THRESHOLD_WEEKS = 20;
 
 /* Multi-competition support: up to 2 secondary/qualifying meets get a short, shallow
    "mini-taper" rather than a second or third full 2-3 week championship taper.
+   (Updated Nov 2026: a secondary meet 12+ weeks before the next meet now gets a full
+   taper; see secondaryTaper below.)
    Urbanchek's own annual plan ran exactly two FULL tapers across a ~48-week year
    (30wk collegiate season + 18wk summer season, each ending in its own taper) -
    that's the practical ceiling for full championship-caliber tapers in a season.
@@ -414,6 +416,43 @@ const TAPER_LEN_THRESHOLD_WEEKS = 20;
    competition, that's a deliberate coaching call made by editing individual weeks
    directly, not something the app should assume automatically. */
 const DEFAULT_MINI_TAPER_DAYS = 10;
+/* SECONDARY-MEET TAPER BY SPACING (coach decision, Nov 2026). How much a Comp 1 / Comp 2
+   taper rests depends on how many weeks it sits before the NEXT meet (Comp 2 or the main
+   meet):
+   - 5 weeks or less: light rest. The mini-taper length setting (default 10 days, 2 weeks)
+     at half the main taper's cut. Hellard et al. 2013 (French national team): 26 of 85
+     training periods had their best winter swim at the prep meet ~3 weeks before the main
+     meet, i.e. peaked too early, so a meet that close gets only a light rest.
+   - 12 weeks or more: a full taper, 3 weeks (2 taper weeks plus the meet week) as deep as
+     the main taper. Mujika et al. 1996: swimmers whose meets were ~15 weeks apart improved
+     significantly with each of two full 3-4 week tapers (+2.9%, +3.2%).
+   - 6 to 11 weeks: the mini-taper length, with the cut stepping up evenly from half to the
+     full main-taper cut. No study covers this range; the even step is a coach choice.
+   No study compares one, two and three tapers head to head (Pyne, Mujika & Reilly 2009
+   call multiple peaking an open question), so the 5- and 12-week cutoffs are coach
+   judgment built on those two studies. */
+const SPACED_LIGHT_MAX_WEEKS = 5;
+const SPACED_FULL_MIN_WEEKS = 12;
+const FULL_SECONDARY_TAPER_WEEKS = 3;
+const LIGHT_TAPER_DEPTH = 0.5;
+function secondaryTaper(gapWeeks, miniTaperWeeks){
+  if(!(gapWeeks > SPACED_LIGHT_MAX_WEEKS)) return {weeks:miniTaperWeeks, depth:LIGHT_TAPER_DEPTH, kind:'light', gap:gapWeeks};
+  if(gapWeeks >= SPACED_FULL_MIN_WEEKS) return {weeks:Math.max(miniTaperWeeks, FULL_SECONDARY_TAPER_WEEKS), depth:1, kind:'full', gap:gapWeeks};
+  const t = (gapWeeks - SPACED_LIGHT_MAX_WEEKS) / (SPACED_FULL_MIN_WEEKS - SPACED_LIGHT_MAX_WEEKS);
+  return {weeks:miniTaperWeeks, depth:LIGHT_TAPER_DEPTH + (1-LIGHT_TAPER_DEPTH)*t, kind:'partial', gap:gapWeeks};
+}
+/* Both secondary tapers for a season. Comp 2's next meet is the main meet (the final
+   week); Comp 1's next meet is Comp 2 when Comp 2 fits in the plan, otherwise the main
+   meet. A full taper that can't fit (too early in the season, or too close behind
+   Comp 1) is shortened to what fits, never below the mini-taper length. */
+function compTaperPlan(numWeeks, w1, w2, miniTaperWeeks, mainTaperStart){
+  const p2 = w2 ? secondaryTaper(numWeeks - w2, miniTaperWeeks) : null;
+  if(p2 && w1 && w2 - p2.weeks <= w1) p2.weeks = Math.max(miniTaperWeeks, w2 - w1 - 1);
+  const c2fits = !!(w1 && p2 && (w2 - p2.weeks) > w1 && w2 < mainTaperStart);
+  const p1 = w1 ? secondaryTaper((c2fits ? w2 : numWeeks) - w1, miniTaperWeeks) : null;
+  if(p1 && w1 - p1.weeks < 1) p1.weeks = Math.max(miniTaperWeeks, w1 - 1);
+  return {p1, p2};
+}
 // Mini-taper DEPTH is no longer a flat constant - see the miniTaperFrac calculation
 // in suggestVolumes, which scales it per event orientation off that event's own
 // main-taper reduction (roughly half as deep as the full championship taper).
@@ -603,12 +642,14 @@ function maturityBlend(age, sex){
    their careers, French Federation data (Hellard et al. 2013) suggests a more
    continuous training load with smaller overload/taper swings, so the reduction is
    scaled to 60% of the adult reduction for a fully "young" athlete, blending up to
-   100% at maturity. Mini-tapers are half the main taper's reduction at each end. */
+   100% at maturity. Comp 1 / Comp 2 tapers cut a share of the main taper's reduction set by
+   how far the next meet is (secondaryTaper): half when it's 5 weeks or less, all of it at 12+. */
 const YOUTH_TAPER_SCALE = 0.60;
-function taperFracs(eventKey, age, sex, isMain){
+function taperFracs(eventKey, age, sex, isMain, depth){
   const prof = ZONE_PROFILES[eventKey] || ZONE_PROFILES.mid;
   const scale = YOUTH_TAPER_SCALE + (1-YOUTH_TAPER_SCALE)*maturityBlend(age, sex);
-  const miniFactor = isMain ? 1 : 0.5;
+  // secondary meets: depth comes from secondaryTaper (half the main cut when the next meet is close)
+  const miniFactor = isMain ? 1 : (depth || LIGHT_TAPER_DEPTH);
   return {
     high: 1 - (1-prof.taperHigh)*scale*miniFactor,
     low:  1 - (1-prof.taperLow)*scale*miniFactor,
@@ -966,17 +1007,19 @@ function assignPhases(numWeeks, downFreq, weeksToComp1, weeksToComp2, miniTaperW
   const mainTaperStart = numWeeks - mainTaperLen;
   for(let i=mainTaperStart;i<numWeeks;i++){ if(i>=0) phases[i]='taper'; }
 
-  const comp1Valid = weeksToComp1 && weeksToComp1 >= (miniTaperWeeks+1) && weeksToComp1 < mainTaperStart;
+  const plans = compTaperPlan(numWeeks, weeksToComp1, weeksToComp2, miniTaperWeeks, mainTaperStart);
+  const comp1Weeks = plans.p1 ? plans.p1.weeks : miniTaperWeeks, comp2Weeks = plans.p2 ? plans.p2.weeks : miniTaperWeeks;
+  const comp1Valid = weeksToComp1 && weeksToComp1 >= (comp1Weeks+1) && weeksToComp1 < mainTaperStart;
   if(comp1Valid){
-    const s = weeksToComp1 - miniTaperWeeks;
+    const s = weeksToComp1 - comp1Weeks;
     for(let i=s;i<weeksToComp1;i++){ phases[i]='taper'; }
   }
   // Competition 2 only counts if Competition 1 is also set, comes after it with room
   // for at least one rebuild week between the two mini-tapers, and still fits before
   // the main taper begins.
-  const comp2Valid = comp1Valid && weeksToComp2 && (weeksToComp2 - miniTaperWeeks) > weeksToComp1 && weeksToComp2 < mainTaperStart;
+  const comp2Valid = comp1Valid && weeksToComp2 && (weeksToComp2 - comp2Weeks) > weeksToComp1 && weeksToComp2 < mainTaperStart;
   if(comp2Valid){
-    const s2 = weeksToComp2 - miniTaperWeeks;
+    const s2 = weeksToComp2 - comp2Weeks;
     for(let i=s2;i<weeksToComp2;i++){ phases[i]='taper'; }
   }
 
@@ -1008,6 +1051,7 @@ function assignPhases(numWeeks, downFreq, weeksToComp1, weeksToComp2, miniTaperW
   phases.comp1Used = !!comp1Valid;
   phases.comp2Used = !!comp2Valid;
   phases.mainTaperStart = mainTaperStart;
+  phases.compPlans = {p1: comp1Valid ? plans.p1 : null, p2: comp2Valid ? plans.p2 : null};
   return phases;
 }
 
@@ -1217,6 +1261,18 @@ function fillWaveWeeks(phasesArr, vols, fromIdx, toIdx, seasonPeak, age, skipLog
   }
 }
 
+/* The secondary-taper plan for a taper block (null for the main taper), worked out from
+   the season settings so generation and manual edits agree. */
+function secondaryTaperFor(tb, phasesArr){
+  const s = settings, blocks = findTaperBlocks(phasesArr);
+  const main = blocks[blocks.length-1];
+  if(!main || tb.start === main.start) return null;
+  const mw = Math.ceil((s.miniTaperDays||DEFAULT_MINI_TAPER_DAYS)/7);
+  const plans = compTaperPlan(phasesArr.length, s.weeksToComp1||0, s.weeksToComp2||0, mw, main.start);
+  if(plans.p1 && tb.end === s.weeksToComp1) return plans.p1;
+  if(plans.p2 && tb.end === s.weeksToComp2) return plans.p2;
+  return {weeks:tb.end-tb.start, depth:LIGHT_TAPER_DEPTH, kind:'light'};
+}
 function taperWeeks(vols, tb, fromVolume, highFrac, lowFrac){
   const T = tb.end - tb.start;
   for(let k=0;k<T;k++){
@@ -1230,13 +1286,13 @@ function suggestVolumes(phases, peak1, levelKey, peak2, eventKey){
   const volumes = new Array(phases.length).fill(0);
   const taperBlocks = findTaperBlocks(phases);
   const mainTaper = taperBlocks[taperBlocks.length-1];
-  const miniFr = taperFracs(eventKey, settings.age, settings.sex, false);
   const mainFr = taperFracs(eventKey, settings.age, settings.sex, true);
   let from = 0;
   taperBlocks.forEach(tb=>{
     fillWaveWeeks(phases, volumes, from, tb.start, peak1, settings.age, false);
     const fromVol = tb.start>0 ? volumes[tb.start-1] : peak1;
-    const fr = tb===mainTaper ? mainFr : miniFr;
+    const sec = tb===mainTaper ? null : secondaryTaperFor(tb, phases);
+    const fr = sec ? taperFracs(eventKey, settings.age, settings.sex, false, sec.depth) : mainFr;
     taperWeeks(volumes, tb, fromVol, fr.high, fr.low);
     from = tb.end;
   });
@@ -1507,8 +1563,19 @@ function generatePlan(){
   const compNote = (label, dateIso, wk) => {
     if(!dateIso) return;
     if(wk === 0) notes.push(`${label} is before Season Start, so it was left out.`);
-    else notes.push(`${label} (week ${wk}) was left out: it has to land before the main taper (week ${phases.mainTaperStart+1}) with room for its ${miniTaperDays}-day mini-taper${label==='Competition 2'?' and at least one build week after Competition 1':''}.`);
+    else notes.push(`${label} (week ${wk}) was left out: it has to land before the main taper (week ${phases.mainTaperStart+1}) with room for its taper${label==='Competition 2'?' and at least one build week after Competition 1':''}.`);
   };
+  const taperNote = (label, wk, pl, nextLabel) => {
+    if(!pl) return;
+    const what = pl.kind==='full' ? `a full ${pl.weeks}-week taper, as deep as the main taper`
+      : pl.kind==='light' ? `light rest, a ${pl.weeks}-week mini-taper at half the main taper's cut`
+      : `a ${pl.weeks}-week taper at ${Math.round(pl.depth*100)}% of the main taper's cut`;
+    notes.push(`${label} (week ${wk}) is ${pl.gap} weeks before ${nextLabel}: ${what}.`);
+  };
+  if(phases.compPlans){
+    taperNote('Competition 1', weeksToComp1, phases.compPlans.p1, phases.comp2Used ? 'Competition 2' : 'the main meet');
+    taperNote('Competition 2', weeksToComp2, phases.compPlans.p2, 'the main meet');
+  }
   if(!phases.comp1Used) compNote('Competition 1', comp1DateIso, weeksToComp1);
   if(!phases.comp2Used && comp2DateIso){
     if(!phases.comp1Used) notes.push('Competition 2 was left out because Competition 1 is not in the plan.');
@@ -2049,7 +2116,8 @@ function recalcAfterPeakEdit(editedIdx, newVolume){
   if(nextTaper && editedIdx === seg.end-1 && phasesArr[editedIdx]==='build'){
     // Edited the last full week before a taper: the taper follows it, and the block
     // after the meet restarts from POST_COMP_RESUME_FRAC of the new number.
-    const fr = taperFracs(settings.eventType, settings.age, settings.sex, isMain);
+    const sec = isMain ? null : secondaryTaperFor(nextTaper, phasesArr);
+    const fr = taperFracs(settings.eventType, settings.age, settings.sex, isMain, sec ? sec.depth : undefined);
     taperWeeks(vols, nextTaper, newVolume, fr.high, fr.low);
     const nextSeg = segments.find(sg=> sg.start === nextTaper.end);
     if(nextSeg) fillWaveWeeks(phasesArr, vols, nextSeg.start, nextSeg.end, settings.peakVolume, settings.age, true);
